@@ -12,7 +12,8 @@ public sealed partial class GeneralPage : UserControl
     public GeneralPage()
     {
         InitializeComponent();
-        Startup.IsOn = Store.StartsWithWindows;
+        Startup.IsOn = Store.StartsWithWindows && !Store.BlockedByWindows;  // never On while Windows blocks it
+        ShowStartupNote();
         foreach (int m in FocusChoices) FocusLength.Items.Add($"{m} minutes");
         FocusLength.SelectedIndex = Math.Max(0, Array.IndexOf(FocusChoices, (int)S.FocusMinutes));
     }
@@ -25,6 +26,14 @@ public sealed partial class GeneralPage : UserControl
     {
         try { Store.StartsWithWindows = Startup.IsOn; }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException) { Startup.IsOn = Store.StartsWithWindows; }
+        ShowStartupNote();
+    }
+
+    void ShowStartupNote()
+    {
+        bool blocked = Store.StartsWithWindows && Store.BlockedByWindows;
+        StartupNote.Text = blocked ? "Windows has turned this off in Startup Apps." : "The island only appears while it is running. Keep this on so it is back after a restart.";
+        StartupApps.Visibility = blocked ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void OnFocus(object sender, SelectionChangedEventArgs e) => S.FocusMinutes = FocusChoices[Math.Max(0, FocusLength.SelectedIndex)];

@@ -12,7 +12,7 @@ namespace StatletSettings;
 public sealed class Settings : INotifyPropertyChanged
 {
     double topOffset = 10, focusMinutes = 25, warnAt = 80, critAt = 95;
-    bool openOnHighUsage = true, followAccent = true, instantOpen;
+    bool openOnHighUsage = true, followAccent = true, instantOpen, autostartAsked;
     string afterPeek = "tuck", progressStyle = "wave", glassTint = "#1C1E24", accentColor = "#4CC2FF";
     double mediaPeekMs = 4000, mediaHideMs = 30000, tintOpacity = 0.52, collapsedR = 11, expandedR = 22, textScale = 1, bounce = 40, speed = 60;
 
@@ -35,6 +35,13 @@ public sealed class Settings : INotifyPropertyChanged
     public double Bounce { get => bounce; set => Set(ref bounce, value); }
     public double Speed { get => speed; set => Set(ref speed, value); }
     public bool InstantOpen { get => instantOpen; set => Set(ref instantOpen, value); }
+    // Set when the one-time "start with Windows?" question is shown, so it never returns (even after a crash).
+    public bool AutostartAsked { get => autostartAsked; set => Set(ref autostartAsked, value); }
+
+    // Keys this version does not know (a newer island or settings app wrote them) survive a save.
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; set; }
+
+    public bool ShouldAskAutostart(bool startsWithWindows) => !AutostartAsked && !startsWithWindows;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -54,6 +61,13 @@ public sealed class Settings : INotifyPropertyChanged
     }
 }
 
+// The only places Statlet sends you. It opens them in your browser and fetches nothing itself.
+public static class Links
+{
+    public const string Releases = "https://github.com/ejaysobara/statlet/releases";
+    public const string Notes = "https://github.com/ejaysobara/statlet/releases/latest";
+}
+
 public static class Store
 {
     // STATLET_DATA_DIR replaces %LOCALAPPDATA%\Statlet so tests never touch the real settings file.
@@ -63,6 +77,7 @@ public static class Store
     static readonly string FilePath = Path.Combine(Dir, "settings.json");
     static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, NumberHandling = JsonNumberHandling.AllowReadingFromString };
     static CancellationTokenSource? pending;
+    static bool dirty;  // opening and closing Settings without a change must leave the file byte-identical
 
     public static Settings Current { get; } = Load();
 
@@ -78,7 +93,7 @@ public static class Store
         Settings s;
         try { s = Parse(File.ReadAllText(FilePath)); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { s = new(); }  // missing: defaults
-        s.PropertyChanged += (_, _) => SaveSoon();
+        s.PropertyChanged += (_, _) => { dirty = true; SaveSoon(); };
         return s;
     }
 
@@ -94,6 +109,7 @@ public static class Store
     // Written to a temp file and moved over, so the island never reads half a file.
     public static void Save()
     {
+        if (!dirty) return;
         // The island reads the file the moment the temp file appears and its handle blocks the move, so retry: giving up
         // here silently lost the change and the island rebuilt from the old file.
         for (int attempt = 0; attempt < 10; attempt++)
@@ -104,6 +120,7 @@ public static class Store
                 string temp = FilePath + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(Current, Json));
                 File.Move(temp, FilePath, overwrite: true);
+                dirty = false;
                 return;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Thread.Sleep(40); }
@@ -113,6 +130,8 @@ public static class Store
     // --- Start with Windows: the per-user Run key points at the island beside this app's folder ---
 
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    // Windows' own Startup Apps switch lives here: a binary value named like the Run value, first byte odd = switched off.
+    const string ApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     internal static string IslandExe => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "statlet.exe"));
 
     public static bool StartsWithWindows
@@ -121,9 +140,35 @@ public static class Store
         set
         {
             using var k = Registry.CurrentUser.CreateSubKey(RunKey);
-            if (value) k.SetValue("Statlet", $"\"{IslandExe}\"");
+            if (value) { k.SetValue("Statlet", $"\"{IslandExe}\""); ClearBlocked(); }
             else k.DeleteValue("Statlet", throwOnMissingValue: false);
         }
+    }
+
+    // True when Windows (Settings > Apps > Startup) has switched Statlet off, so a Run value alone starts nothing.
+    public static bool BlockedByWindows => IsBlocked(ApprovedKey);
+
+    internal static bool IsBlocked(string approvedKey)
+    {
+        using var k = Registry.CurrentUser.OpenSubKey(approvedKey);
+        return k?.GetValue("Statlet") is byte[] { Length: > 0 } b && (b[0] & 1) == 1;
+    }
+
+    // Turning it on in Statlet is a fresh choice: drop Windows' old "off" so it takes effect.
+    static void ClearBlocked()
+    {
+        using var k = Registry.CurrentUser.OpenSubKey(ApprovedKey, writable: true);
+        k?.DeleteValue("Statlet", throwOnMissingValue: false);
+    }
+
+    // A Run value written by the old zip build points at that folder; aim it at this install instead.
+    public static void RepairRunPath() => RepairRunPath(RunKey, IslandExe);
+
+    internal static void RepairRunPath(string runKey, string exe)
+    {
+        using var k = Registry.CurrentUser.OpenSubKey(runKey, writable: true);
+        string want = $"\"{exe}\"";
+        if (k?.GetValue("Statlet") is string have && have != want) k.SetValue("Statlet", want);
     }
 
     // --- Preview hold: asks the island to keep a view open (0 none, 1 hover, 2 card, 3 music) ---

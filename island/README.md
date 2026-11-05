@@ -1,7 +1,7 @@
 # Statlet island (native)
 
 The always-running island: Win32 + Windows.UI.Composition in C++ (C++/WinRT), built with the MSVC Build Tools.
-The settings app (WinUI 3) is separate and comes later.
+The settings app (WinUI 3) is separate and comes later;
 
 ```
 build.cmd                     builds out\statlet.exe and out\statlet-tests.exe (/W4 /WX: a warning fails the build)

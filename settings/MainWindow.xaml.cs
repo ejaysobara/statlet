@@ -23,15 +23,40 @@ public sealed partial class MainWindow : Window
             Store.Hold(0);  // let the island close again
             Store.Save();   // a change still waiting on the save delay
         };
+        AppWindow.Closing += OnClosing;
         Scroller.SizeChanged += (_, _) => Fit();
         Nav.SelectedItem = GeneralItem;
+    }
+
+    // The first close with "Start with Windows" off asks once. The answer is stored first, so a crash cannot bring the question back.
+    async void OnClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+    {
+        if (!Store.Current.ShouldAskAutostart(Store.StartsWithWindows)) return;
+        args.Cancel = true;
+        Store.Current.AutostartAsked = true;
+        Store.Save();
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Would you like the Island to start as the computer turns on?",
+            Content = "You will only be asked once. You can change this any time in Settings, General.",
+            PrimaryButtonText = "Yes, start it",
+            CloseButtonText = "No",  // Esc counts as No, and it has the focus, so a stray Enter changes nothing
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            try { Store.StartsWithWindows = true; }
+            catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException) { }
+        }
+        Close();
     }
 
     void OnNavigate(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is not NavigationViewItem { Tag: string tag } || Page is null) return;
         if (!pages.TryGetValue(tag, out var page))
-            pages[tag] = page = tag switch { "media" => new NowPlayingPage(), "look" => new AppearancePage(), _ => new GeneralPage() };
+            pages[tag] = page = tag switch { "media" => new NowPlayingPage(), "look" => new AppearancePage(), "about" => new AboutPage(), _ => new GeneralPage() };
         Page.Content = page;
         bool own = page is AppearancePage;  // it scrolls its controls under a fixed preview
         Scroller.VerticalScrollMode = own ? ScrollMode.Disabled : ScrollMode.Enabled;

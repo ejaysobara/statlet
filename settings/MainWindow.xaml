@@ -27,6 +27,11 @@
                         <FontIcon Glyph="&#xE790;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="About" Tag="about">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE946;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
             <ScrollViewer x:Name="Scroller" Padding="40,8,40,40">
                 <!-- Fit sizes Zoom and Page: up to 1000 wide, scaled up to 1.4x on wide windows -->

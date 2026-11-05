@@ -9,7 +9,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
+      # Tool versions first: if the runner image changes, the first failing log says what it had.
+      - name: Log tool versions
+        shell: pwsh
+        run: |
+          dotnet --info
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property catalog_productDisplayVersion
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" | Select-Object -ExpandProperty Name
+          "VERSION $(Get-Content VERSION)"
       # -Ci skips the render, screen and e2e suites: the runner has no desktop session to draw on.
       - run: .\build.ps1 -Ci
         shell: pwsh
