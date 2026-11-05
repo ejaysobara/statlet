@@ -7,7 +7,7 @@
 <p align="center">
   <img alt="Windows 11" src="https://img.shields.io/badge/Windows-11%20x64-0078D4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green">
-  <img alt="Pre-release" src="https://img.shields.io/badge/release-v1.0.0-blue">
+  <img alt="Release v1.0.0" src="https://img.shields.io/badge/release-v1.0.0-blue">
 </p>
 
 <p align="center">
