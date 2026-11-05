@@ -1,0 +1,65 @@
+{
+ "comment": "speed and bounce (0-100) to spring stiffness and damping; checked by island/tests (SpringFromFeel) and settings.tests (Motion)",
+ "cases": [
+  {
+   "speed": 0,
+   "bounce": 0,
+   "stiffness": 148.4924,
+   "damping": 24.3715
+  },
+  {
+   "speed": 0,
+   "bounce": 100,
+   "stiffness": 148.4924,
+   "damping": 13.999
+  },
+  {
+   "speed": 20,
+   "bounce": 40,
+   "stiffness": 210.0,
+   "damping": 24.0487
+  },
+  {
+   "speed": 40,
+   "bounce": 40,
+   "stiffness": 296.9848,
+   "damping": 28.5989
+  },
+  {
+   "speed": 60,
+   "bounce": 0,
+   "stiffness": 420.0,
+   "damping": 40.9878
+  },
+  {
+   "speed": 60,
+   "bounce": 40,
+   "stiffness": 420.0,
+   "damping": 34.01
+  },
+  {
+   "speed": 60,
+   "bounce": 100,
+   "stiffness": 420.0,
+   "damping": 23.5434
+  },
+  {
+   "speed": 80,
+   "bounce": 60,
+   "stiffness": 593.9697,
+   "damping": 36.296
+  },
+  {
+   "speed": 100,
+   "bounce": 0,
+   "stiffness": 840.0,
+   "damping": 57.9655
+  },
+  {
+   "speed": 100,
+   "bounce": 100,
+   "stiffness": 840.0,
+   "damping": 33.2954
+  }
+ ]
+}

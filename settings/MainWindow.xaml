@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="StatletSettings.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Statlet Settings">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid x:Name="TitleBar" Padding="16,0" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Image Source="Assets/statlet-app.png" Width="20" Height="20" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="Statlet Settings" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+        </Grid>
+        <NavigationView x:Name="Nav" Grid.Row="1" PaneDisplayMode="Left" IsSettingsVisible="False" IsBackButtonVisible="Collapsed"
+                        IsPaneToggleButtonVisible="False" OpenPaneLength="260" SelectionChanged="OnNavigate">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="GeneralItem" Content="General" Tag="general" Icon="Setting" />
+                <NavigationViewItem Content="Now playing" Tag="media" Icon="Audio" />
+                <NavigationViewItem Content="Appearance" Tag="look">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE790;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <ScrollViewer x:Name="Scroller" Padding="40,8,40,40">
+                <!-- Fit sizes Zoom and Page: up to 1000 wide, scaled up to 1.4x on wide windows -->
+                <Viewbox x:Name="Zoom" Stretch="Uniform" HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <ContentControl x:Name="Page" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                </Viewbox>
+            </ScrollViewer>
+        </NavigationView>
+    </Grid>
+</Window>

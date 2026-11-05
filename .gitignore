@@ -1,0 +1,9 @@
+﻿_analysis/
+bin/
+obj/
+.vs/
+*.user
+graphify-out/
+island/out/
+island/tests/out/
+dist/

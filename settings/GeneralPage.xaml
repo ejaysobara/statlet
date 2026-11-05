@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="StatletSettings.GeneralPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="4">
+        <TextBlock Text="General" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,24" />
+
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE7E8;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Start with Windows" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="The island opens when you sign in" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch x:Name="Startup" Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" Toggled="OnStartup"
+                          AutomationProperties.Name="Start with Windows" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE740;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Distance from the top" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Space between the island and the top of the screen" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <Slider Grid.Column="2" Width="200" Minimum="0" Maximum="48" StepFrequency="1" VerticalAlignment="Center"
+                    Value="{x:Bind S.TopOffset, Mode=TwoWay}" AutomationProperties.Name="Distance from the top" />
+            <TextBlock Grid.Column="3" Style="{StaticResource Value}" Text="{x:Bind Px(S.TopOffset), Mode=OneWay}" />
+        </Grid>
+
+        <TextBlock Text="Focus timer" Style="{StaticResource Section}" />
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE916;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Focus length" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Start a session from the tray icon. The time left sits next to the clock." Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ComboBox x:Name="FocusLength" Grid.Column="2" MinWidth="150" VerticalAlignment="Center" SelectionChanged="OnFocus"
+                      AutomationProperties.Name="Focus length" />
+        </Grid>
+
+        <TextBlock Text="CPU and memory" Style="{StaticResource Section}" />
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE7BA;" Foreground="#FFB020" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Warning at" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Bars turn amber and show a warning mark" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <Slider Grid.Column="2" Width="200" Minimum="50" Maximum="95" StepFrequency="1" VerticalAlignment="Center"
+                    Value="{x:Bind S.WarnAt, Mode=TwoWay}" AutomationProperties.Name="Warning at" />
+            <TextBlock Grid.Column="3" Style="{StaticResource Value}" Text="{x:Bind Pct(S.WarnAt), Mode=OneWay}" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xEA39;" Foreground="#FF5A52" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Critical at" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Bars turn red. Always at least 5% above the warning." Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <Slider Grid.Column="2" Width="200" Minimum="{x:Bind CritMin(S.WarnAt), Mode=OneWay}" Maximum="100" StepFrequency="1" VerticalAlignment="Center"
+                    Value="{x:Bind S.CritAt, Mode=TwoWay}" AutomationProperties.Name="Critical at" />
+            <TextBlock Grid.Column="3" Style="{StaticResource Value}" Text="{x:Bind Pct(S.CritAt), Mode=OneWay}" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE9D9;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Open the island when usage stays high" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Above 90% for 30 seconds, it opens and shows the numbers" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.OpenOnHighUsage, Mode=TwoWay}"
+                          AutomationProperties.Name="Open the island when usage stays high" />
+        </Grid>
+
+        <TextBlock Text="Changes apply to the island right away. There is no Save button." Style="{StaticResource RowDesc}" Margin="0,24,0,0" />
+    </StackPanel>
+</UserControl>

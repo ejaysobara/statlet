@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="StatletSettings.NowPlayingPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <!-- A stand-in desktop with a mini island at its top -->
+        <Style x:Key="Stage" TargetType="Grid">
+            <Setter Property="Height" Value="96" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="#3B4150" />
+            <Setter Property="Padding" Value="0,14,0,0" />
+        </Style>
+        <Style x:Key="MiniIsland" TargetType="StackPanel">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Spacing" Value="8" />
+            <Setter Property="Padding" Value="7,0,12,0" />
+            <Setter Property="CornerRadius" Value="11" />
+            <Setter Property="Background" Value="#DB1C1E24" />
+            <Setter Property="BorderBrush" Value="#24FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="MiniText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource IslandFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#F5F6F8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="Tile" TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+            <Setter Property="Width" Value="300" />
+            <Setter Property="Margin" Value="0,0,12,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+    </UserControl.Resources>
+    <StackPanel Spacing="4">
+        <TextBlock Text="Now playing" Style="{StaticResource TitleTextBlockStyle}" />
+        <TextBlock Text="When a song starts or changes, the island shows it for a moment. Then it settles into the view you pick here."
+                   Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,8,0,20" TextWrapping="Wrap" />
+
+        <TextBlock Text="After the song is shown" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,0,0,6" />
+        <GridView x:Name="Modes" SelectionMode="Single" SelectionChanged="OnMode" AutomationProperties.Name="After the song is shown">
+            <GridViewItem Tag="tuck" Style="{StaticResource Tile}" AutomationProperties.Name="Tuck in, the default">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}">
+                        <StackPanel Style="{StaticResource MiniIsland}">
+                            <Border Width="22" Height="22" CornerRadius="6" Background="#C9603A" VerticalAlignment="Center" />
+                            <TextBlock Text="9:41" Style="{StaticResource MiniText}" />
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <Border Width="26" Height="4" CornerRadius="2" Background="#33F5F6F8"><Border Width="11" HorizontalAlignment="Left" CornerRadius="2" Background="#F5F6F8" /></Border>
+                                <Border Width="26" Height="4" CornerRadius="2" Background="#33F5F6F8"><Border Width="16" HorizontalAlignment="Left" CornerRadius="2" Background="#F5F6F8" /></Border>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Height="14">
+                                <Border Width="3" Height="6" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                                <Border Width="3" Height="12" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                                <Border Width="3" Height="9" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                                <Border Width="3" Height="13" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Tuck in (default)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Small art and a moving equalizer sit beside the clock" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+            <GridViewItem Tag="clock" Style="{StaticResource Tile}" AutomationProperties.Name="Clock only">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}">
+                        <StackPanel Style="{StaticResource MiniIsland}" Padding="12,0">
+                            <TextBlock Text="Tue 4" Style="{StaticResource MiniText}" />
+                            <TextBlock Text="9:41" Style="{StaticResource MiniText}" />
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <Border Width="26" Height="4" CornerRadius="2" Background="#33F5F6F8"><Border Width="11" HorizontalAlignment="Left" CornerRadius="2" Background="#F5F6F8" /></Border>
+                                <Border Width="26" Height="4" CornerRadius="2" Background="#33F5F6F8"><Border Width="16" HorizontalAlignment="Left" CornerRadius="2" Background="#F5F6F8" /></Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Clock only" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Just the clock and bars. The song shows again when it changes." Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+            <GridViewItem Tag="music" Style="{StaticResource Tile}" AutomationProperties.Name="Song title">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}">
+                        <StackPanel Style="{StaticResource MiniIsland}">
+                            <Border Width="22" Height="22" CornerRadius="6" Background="#C9603A" VerticalAlignment="Center" />
+                            <TextBlock Text="Northern Lights · Aurora Field" Style="{StaticResource MiniText}" MaxWidth="130" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Height="14">
+                                <Border Width="3" Height="6" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                                <Border Width="3" Height="12" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                                <Border Width="3" Height="9" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                                <Border Width="3" Height="13" CornerRadius="1.5" Background="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Bottom" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Song title" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Art, title and equalizer take the place of the clock" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+        </GridView>
+
+        <TextBlock Text="Progress bar on the music card" Style="{StaticResource Section}" />
+        <GridView x:Name="Bars" SelectionMode="Single" SelectionChanged="OnBar" AutomationProperties.Name="Progress bar on the music card">
+            <GridViewItem Tag="wave" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Wavy, the default">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}" Padding="0">
+                        <Grid Width="320" Height="56" CornerRadius="22" Background="#DB1C1E24" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="18,0" ColumnSpacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="1:12" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                            <Canvas Grid.Column="1" Height="14" VerticalAlignment="Center">
+                                <Canvas.Clip><RectangleGeometry Rect="0,0,120,14" /></Canvas.Clip>
+                                <Path Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      Data="M0,7 Q8,1 16,7 T32,7 T48,7 T64,7 T80,7 T96,7 T112,7 T128,7 T144,7 T160,7">
+                                    <Path.RenderTransform><TranslateTransform x:Name="Drift" /></Path.RenderTransform>
+                                </Path>
+                            </Canvas>
+                            <Line Grid.Column="1" X1="126" Y1="7" X2="196" Y2="7" Stroke="#33F5F6F8" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="3:24" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                        </Grid>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Wavy (default)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="The played part waves gently while music plays and flattens when paused" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+            <GridViewItem Tag="line" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Straight">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}" Padding="0">
+                        <Grid Width="320" Height="56" CornerRadius="22" Background="#DB1C1E24" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="18,0" ColumnSpacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="1:12" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                            <Line Grid.Column="1" X1="2" Y1="7" X2="196" Y2="7" Stroke="#33F5F6F8" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
+                            <Line Grid.Column="1" X1="2" Y1="7" X2="120" Y2="7" Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="3:24" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                        </Grid>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Straight" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="A plain line, no motion" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+        </GridView>
+
+        <TextBlock Text="Timing" Style="{StaticResource Section}" />
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Show a new song for" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Art, title and artist, before the island settles" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ComboBox x:Name="Peek" Grid.Column="1" MinWidth="150" VerticalAlignment="Center" SelectionChanged="OnPeek" AutomationProperties.Name="Show a new song for" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Hide a paused player after" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="The island goes back to the clock" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ComboBox x:Name="Hide" Grid.Column="1" MinWidth="150" VerticalAlignment="Center" SelectionChanged="OnHide" AutomationProperties.Name="Hide a paused player after" />
+        </Grid>
+    </StackPanel>
+</UserControl>

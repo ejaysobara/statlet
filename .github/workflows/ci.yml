@@ -1,0 +1,15 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      # -Ci skips the render, screen and e2e suites: the runner has no desktop session to draw on.
+      - run: .\build.ps1 -Ci
+        shell: pwsh

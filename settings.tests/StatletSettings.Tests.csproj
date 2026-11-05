@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tests for the settings app's logic. They compile Settings.cs and Motion.cs directly (neither needs WinUI), so the
+     tests run without the app's runtime. `dotnet test settings.tests` from the repository root. -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net8.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <RootNamespace>StatletSettings.Tests</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Include="..\settings\Settings.cs" Link="Settings.cs" />
+        <Compile Include="..\settings\Motion.cs" Link="Motion.cs" />
+        <Compile Include="..\settings\IslandLauncher.cs" Link="IslandLauncher.cs" />
+        <Content Include="..\tests\fixtures\*.json" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+        <PackageReference Include="xunit" Version="2.9.2" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    </ItemGroup>
+</Project>
