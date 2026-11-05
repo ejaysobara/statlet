@@ -40,7 +40,7 @@ using winrt::Windows::UI::ViewManagement::UIColorType;
 using winrt::Windows::UI::ViewManagement::UISettings;
 
 enum : UINT { WM_APP_SETTINGS = WM_APP + 1, WM_APP_TRAY, WM_APP_VOLUME, WM_APP_NET, WM_APP_MEDIA, WM_APP_HOLD };
-enum : UINT_PTR { TimerHover = 1, TimerClock, TimerStats, TimerBenchToggle, TimerBenchEnd, TimerTakeover, TimerNetDebounce, TimerFocusEnd, TimerDemo, TimerPeek, TimerMediaHide, TimerMediaClock, TimerReload, TimerRevalidate, TimerAwayReturn };
+enum : UINT_PTR { TimerHover = 1, TimerClock, TimerStats, TimerBenchToggle, TimerBenchEnd, TimerTakeover, TimerNetDebounce, TimerFocusEnd, TimerDemo, TimerPeek, TimerMediaHide, TimerMediaClock, TimerReload, TimerRevalidate, TimerAwayReturn, TimerAwayRecheck };
 enum : UINT { MenuQuit = 1, MenuFocus, MenuSettings };
 
 static Tokens t;
@@ -1196,6 +1196,8 @@ static void CALLBACK OnWinEvent(HWINEVENTHOOK, DWORD event, HWND w, LONG idObjec
     if (event >= EVENT_OBJECT_SHOW) {  // object events: only top-level windows
         if (idObject != OBJID_WINDOW || idChild != 0 || !w || GetAncestor(w, GA_ROOT) != w) return;
         if (event == EVENT_OBJECT_LOCATIONCHANGE && w != GetForegroundWindow() && w != frontWindow) return;
+        // The show event can arrive before the window is in front in the z-order: look again shortly (one timer, coalesced).
+        if (event != EVENT_OBJECT_LOCATIONCHANGE) SetTimer(hwnd, TimerAwayRecheck, 120, nullptr);
     }
     UpdateAway();
 }
@@ -1437,7 +1439,9 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (wp == TimerReload) {
             KillTimer(h, TimerReload);
             ReloadSettings();
-        } else if (wp == TimerAwayReturn) {
+        } else if (wp == TimerAwayRecheck) {
+            KillTimer(h, TimerAwayRecheck);
+            UpdateAway();        } else if (wp == TimerAwayReturn) {
             KillTimer(h, TimerAwayReturn);
             UpdateAway(true);
         } else if (wp == TimerRevalidate) {
@@ -1516,7 +1520,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         std::wstring mutex = L"Local\\Statlet.Island";
         if (DWORD n = GetEnvironmentVariableW(L"STATLET_INSTANCE", instance, 32); n > 0 && n < 32) mutex += std::wstring(L".") + instance;
         CreateMutexW(nullptr, TRUE, mutex.c_str());
-        if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+        if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            // Started again (Start menu, shortcut): the island is already up, so show Settings instead of exiting unseen.
+            // A test island (STATLET_INSTANCE) never opens windows.
+            if (GetEnvironmentVariableW(L"STATLET_INSTANCE", instance, 32) == 0) OpenSettings();
+            return 0;
+        }
     }
     // Benchmarks keep the defaults. The reference app Dynamic Edge often occupies the top center; tests and benchmarks
     // move the island down with STATLET_TOP_OFFSET.

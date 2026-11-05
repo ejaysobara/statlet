@@ -16,6 +16,10 @@
             <ToggleSwitch x:Name="Startup" Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" Toggled="OnStartup"
                           AutomationProperties.Name="Start with Windows" />
         </Grid>
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,8">
+            <TextBlock x:Name="StartupNote" Style="{StaticResource RowDesc}" VerticalAlignment="Center" />
+            <HyperlinkButton x:Name="StartupApps" Content="Open Startup Apps" NavigateUri="ms-settings:startupapps" Padding="0" Visibility="Collapsed" />
+        </StackPanel>
         <Grid Style="{StaticResource Row}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <FontIcon Glyph="&#xE740;" VerticalAlignment="Center" />

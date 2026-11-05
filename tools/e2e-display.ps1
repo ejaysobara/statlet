@@ -49,7 +49,8 @@ try {
     Start-Sleep -Seconds 2
     $hwnd = [D]::IslandOf($island.Id)
     if ($hwnd -eq [IntPtr]::Zero) { throw 'the test island did not start' }
-    Write-Host "start mode $start; $Rounds round(s)"
+    $handles0 = (Get-Process -Id $island.Id).HandleCount
+    Write-Host "start mode $start; $Rounds round(s); handles $handles0"
     for ($i = 1; $i -le $Rounds; $i++) {
         foreach ($mode in 'external', 'internal', 'extend') {
             Switch-To $mode
@@ -61,6 +62,9 @@ try {
             if (-not $ok) { $failures += $line }
         }
     }
+    $handles1 = (Get-Process -Id $island.Id).HandleCount
+    Write-Host "handles $handles0 -> $handles1 after $($Rounds * 3) switches"
+    if ($handles1 - $handles0 -gt 50) { $failures += "handle count grew by $($handles1 - $handles0) (limit 50)" }
 } finally {
     Switch-To $start
     if (-not $island.HasExited) { [void][D]::PostMessage([D]::IslandOf($island.Id), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }  # WM_CLOSE

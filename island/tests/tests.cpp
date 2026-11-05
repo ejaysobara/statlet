@@ -163,7 +163,7 @@ TEST_CASE("math") {
     CHECK(Contrast(t.ink2, t.glassTint) > 7, "Ink2 contrast %f", Contrast(t.ink2, t.glassTint));
 }
 
-TEST_CASE("away") {  // AwayFor in shape_math.h, with windows seen in island.log on the dev machine
+TEST_CASE("away") {  // AwayFor in shape_math.h, with windows seen in island.log on Ejay's machine
     auto make = [](bool covers, bool zoomed, bool caption) {
         FrontWindow f;
         f.usable = f.onPrimary = true;
@@ -686,7 +686,7 @@ TEST_SUITE_END();
 
 TEST_SUITE_BEGIN("instance");
 
-static HWND IslandOf(DWORD pid) {  // another island may be running too, so FindWindow is not enough
+static HWND IslandOf(DWORD pid) {  // Ejay's own island may be running too, so FindWindow is not enough
     struct Find { DWORD pid; HWND found; } f{pid, nullptr};
     EnumWindows([](HWND w, LPARAM lp) -> BOOL {
         auto* f = reinterpret_cast<Find*>(lp);
@@ -735,6 +735,8 @@ TEST_CASE("a test island runs beside the real one and revalidates on resume, unl
     HWND island = nullptr;
     for (int i = 0; i < 50 && !island; i++) Sleep(100), island = IslandOf(pi.dwProcessId);
     CHECK(island, "the test island did not start (the single-instance check may ignore STATLET_INSTANCE)");
+    // The window exists before the island has installed its window-event hooks: wait for the line logged after them.
+    for (int i = 0; i < 100 && island && ReadFile(log, before).find("timers on") == std::string::npos; i++) Sleep(50);
     if (island) {
         PostMessageW(island, WM_POWERBROADCAST, PBT_APMRESUMEAUTOMATIC, 0);
         PostMessageW(island, WM_WTSSESSION_CHANGE, WTS_SESSION_UNLOCK, 0);
@@ -760,17 +762,33 @@ TEST_CASE("a test island runs beside the real one and revalidates on resume, unl
         GetMonitorInfoW(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY), &mi);
         RECT m = mi.rcMonitor;
         uintmax_t mark = std::filesystem::file_size(log, ec);
-        HWND big = CreateWindowExW(WS_EX_NOACTIVATE, wc.lpszClassName, L"Statlet test window", WS_POPUP, m.left, m.top, m.right - m.left, m.bottom - m.top, nullptr,
-                                   nullptr, wc.hInstance, nullptr);
-        SetWindowPos(big, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        // Topmost: a background process cannot raise a plain window above the foreground one, which made this flaky.
+        HWND big = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOPMOST, wc.lpszClassName, L"Statlet test window", WS_POPUP, m.left, m.top, m.right - m.left, m.bottom - m.top,
+                                   nullptr, nullptr, wc.hInstance, nullptr);
+        SetWindowPos(big, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         Sleep(400);
         std::string hid = ReadFile(log, mark);
+        CHECK(big && IsWindowVisible(big), "the test window was not created or shown (error %lu)", GetLastError());
         CHECK(GetForegroundWindow() != big, "the test window took the focus; this check needs it not to");
-        CHECK(hid.find("away no -> hidden") != std::string::npos, "a fullscreen window in front without the focus did not hide the island: '%s'", hid.c_str());
+        std::string top;  // what is in front, for the failure message
+        auto hides = [](const std::string& s) { return s.find("-> hidden:") != std::string::npos; };  // from no, or from slid when a maximized window is behind
+        if (!hides(hid)) {
+            int n = 0;
+            for (HWND w = GetTopWindow(nullptr); w && n < 6; w = GetWindow(w, GW_HWNDNEXT)) {
+                if (!IsWindowVisible(w)) continue;
+                wchar_t cls[48] = L"";
+                RECT r{};
+                GetClassNameW(w, cls, 48);
+                GetWindowRect(w, &r);
+                top += Fmt(" [%ls ex=%lX %ld,%ld-%ld,%ld%s]", cls, GetWindowLongW(w, GWL_EXSTYLE), r.left, r.top, r.right, r.bottom, w == big ? " TEST" : "");
+                n++;
+            }
+        }
+        CHECK(hides(hid), "a fullscreen window in front without the focus did not hide the island: '%s' z-order:%s", hid.c_str(), top.c_str());
         mark = std::filesystem::file_size(log, ec);
         DestroyWindow(big);
         Sleep(400);
-        CHECK(ReadFile(log, mark).find("away hidden -> no") != std::string::npos, "closing it did not bring the island back");
+        CHECK(ReadFile(log, mark).find("away hidden -> ") != std::string::npos, "closing it did not bring the island back");
 
         // W6: locking stops the clock and usage timers; unlocking starts them again.
         mark = std::filesystem::file_size(log, ec);

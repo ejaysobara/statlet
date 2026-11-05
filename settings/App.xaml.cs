@@ -16,6 +16,8 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        try { Store.RepairRunPath(); }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException) { }
         window = new MainWindow();
         window.Activate();
         StartIsland();

@@ -1,14 +1,23 @@
-## Statlet v0.1.0-friends (early test build)
+## Statlet 1.0.0
 
 A Dynamic Island-style floating status pill for Windows 11. Shows time, CPU and RAM; opens for volume, battery,
-network, a Focus timer and now-playing music; includes a settings app. Working name.
+network, a Focus timer and now-playing music; includes a settings app.
 
-**Run it:** extract the zip, double-click `statlet.exe`, click More info > Run anyway on the SmartScreen warning.
-Quit from the tray icon. Nothing to install.
+**New in 1.0.0**
+- A real installer (`Statlet-Setup-1.0.0.exe`): per-user, no administrator needed, updates in place and keeps your settings.
+- Starting Statlet again (Start menu) opens Settings instead of doing nothing.
+- Start with Windows is off by default, with a note in Settings and a one-time question the first time you close Settings.
+  Statlet also notices when Windows has switched it off in Startup Apps.
+- Settings > About: version, install date, and a Releases page button.
+- The settings app now runs on .NET 10.
 
-**Known limits:** Windows 11 x64 only. Unsigned. No installer. Autostart is opt-in in Settings. Tested on one laptop
-plus one external monitor only.
+**Install:** run the setup. Windows shows "Windows protected your PC" because the setup is unsigned: More info > Run anyway.
+Check the download with `Get-FileHash` against the SHA256 below.
+
+**Updates:** Statlet never goes online. On GitHub choose Watch > Custom > Releases to be told about new versions.
+
+**Known limits:** Windows 11 x64 only. Unsigned. Tested on one laptop plus one external monitor.
 
 **Feedback:** open an issue. Attach `%LOCALAPPDATA%\Statlet\island.log` if something went wrong.
 
-SHA256 of `Statlet-friends-20261105.zip`: `596aa04d256d0ea8527add1f5b54af268f9651284d7df057a46825b453b271d0`
+SHA256 of `Statlet-Setup-1.0.0.exe`: d28fe566a1b384873b9647a8ab717f45e0181078ce33cfa7b74c239658ec3401

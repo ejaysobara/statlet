@@ -7,7 +7,7 @@
 <p align="center">
   <img alt="Windows 11" src="https://img.shields.io/badge/Windows-11%20x64-0078D4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green">
-  <img alt="Pre-release" src="https://img.shields.io/badge/release-v0.1.0--friends%20(pre--release)-orange">
+  <img alt="Pre-release" src="https://img.shields.io/badge/release-v1.0.0-blue">
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@ A small floating "island" at the top-center of your Windows 11 screen, in the st
 It sits quietly as a thin status pill, then opens for the things you care about: volume, battery, network, a Focus
 timer and the music that's playing. It is built to cost almost nothing while idle: it wakes only when something changes.
 
-**Status: early test build (v0.1.0-friends).** Rough edges expected. Statlet is a working name and may change.
+**Status: v1.0.0.** Statlet is a working name and may change.
 
 ## What it does
 
@@ -73,20 +73,32 @@ The settings app (tray icon > Settings), where changes apply to the island right
 
 ## Install, run, quit
 
-1. Download `Statlet-friends-*.zip` from [Releases](../../releases) and extract it (right-click > Extract All).
-2. Open the `Statlet` folder and double-click `statlet.exe`.
-3. Windows will say "Windows protected your PC" because the build is unsigned: **More info > Run anyway**.
-4. Quit: tray icon > **Quit Statlet**.
+1. Download `Statlet-Setup-<version>.exe` from [Releases](../../releases).
+2. Optional check: its SHA256 is listed with the release. In PowerShell, `Get-FileHash .\Statlet-Setup-<version>.exe`
+   should print the same value.
+3. Run it. Windows will say "Windows protected your PC" because the setup is unsigned: **More info > Run anyway**.
+   It installs just for you (no administrator needed) into `%LOCALAPPDATA%\Programs\Statlet`.
+4. Start Statlet from the Start menu. Quit: tray icon > **Quit Statlet**.
 
-Nothing to install: no .NET, Visual C++ or Windows App SDK runtime is needed. There is no installer yet.
+Nothing else to install: no .NET, Visual C++ or Windows App SDK runtime is needed. Run a newer setup over the old one to update;
+your settings are kept.
 
-**Uninstall:** turn off "Start with Windows" in Settings if you turned it on, quit Statlet, delete the folder, and delete
-`%LOCALAPPDATA%\Statlet`.
+**Start with Windows** is off by default. Tick it on the installer page, or in Settings > General. The first time you close
+Settings with it off, Statlet asks once whether to turn it on.
+
+**Uninstall:** Settings > Apps > Installed apps > Statlet > Uninstall. This also deletes `%LOCALAPPDATA%\Statlet` (your
+settings and the log).
+
+## Updates
+
+Statlet never connects to the internet, so it cannot tell you about a new version. To hear about releases, open the
+repository on GitHub and choose **Watch > Custom > Releases**, or follow the releases feed. Settings > About has a
+**Releases page** button that opens this page in your browser.
 
 ## Requirements and known limits
 
 - Windows 11, 64-bit (Intel/AMD). Not tested on Windows 10 or ARM.
-- Unsigned, so SmartScreen warns. No installer or auto-update.
+- Unsigned, so SmartScreen warns. No auto-update (see Updates).
 - Autostart is opt-in (Settings > General > Start with Windows). It adds one value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; turning it off removes it.
 - Tested on one laptop with one external monitor, so other multi-monitor setups may misbehave.
@@ -100,11 +112,11 @@ Attach `%LOCALAPPDATA%\Statlet\island.log` if the island vanished or behaved odd
 
 ## Build from source
 
-Needs Visual Studio with the C++ x64 tools and the .NET 8 SDK.
+Needs Visual Studio with the C++ x64 tools, the .NET 10 SDK and, for the installer, Inno Setup 7.
 
 ```
 .\build.ps1        build and test the island (native C++) and the settings app (WinUI 3)
-.\package.ps1      build the portable zip into dist\
+.\package.ps1      build the installer and its SHA256 into dist\
 ```
 
 See `island/README.md` for how the island works and `docs/adr/` for design decisions.

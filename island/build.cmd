@@ -14,7 +14,9 @@ if not exist "%OUT%" mkdir "%OUT%"
 rem /external:* keeps Windows SDK and C++/WinRT headers out of /W4 /WX; our own code gets the full warning level.
 set FLAGS=/nologo /std:c++20 /EHsc /O2 /W4 /WX /external:anglebrackets /external:W0 /permissive- /utf-8 /MT /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS
 set LIBS=d3d11.lib dxgi.lib d2d1.lib dwrite.lib dwmapi.lib dxguid.lib user32.lib gdi32.lib shell32.lib shcore.lib ole32.lib windowscodecs.lib windowsapp.lib CoreMessaging.lib iphlpapi.lib advapi32.lib wtsapi32.lib
-rc /nologo /fo "%OUT%\statlet.res" src\statlet.rc || exit /b 1
+set /p VER=<..\VERSION
+for /f "tokens=1-3 delims=." %%a in ("%VER%") do set "RCVER=/dSTATLET_VER_MAJOR=%%a /dSTATLET_VER_MINOR=%%b /dSTATLET_VER_PATCH=%%c"
+rc /nologo %RCVER% /dSTATLET_VER_STR=\"%VER%\" /fo "%OUT%\statlet.res" src\statlet.rc || exit /b 1
 cl %FLAGS% /Fo"%OUT%\\" src\gfx.cpp src\pieces.cpp src\events.cpp src\media.cpp src\main.cpp /Fe"%OUT%\statlet.exe" /link /WX "%OUT%\statlet.res" /SUBSYSTEM:WINDOWS %LIBS% || exit /b 1
 cl %FLAGS% /Fo"%OUT%\\" tests\tests.cpp "%OUT%\gfx.obj" "%OUT%\pieces.obj" /Fe"%OUT%\statlet-tests.exe" /link /WX /SUBSYSTEM:CONSOLE %LIBS% || exit /b 1
 copy /y assets\Manrope.ttf "%OUT%\" >nul
