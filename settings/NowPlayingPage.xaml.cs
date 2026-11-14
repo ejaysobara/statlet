@@ -8,6 +8,8 @@ public sealed partial class NowPlayingPage : UserControl
     static readonly (double Ms, string Label)[] PeekChoices = [(2000, "2 seconds"), (4000, "4 seconds"), (6000, "6 seconds"), (8000, "8 seconds")];
     static readonly (double Ms, string Label)[] HideChoices = [(10000, "10 seconds"), (30000, "30 seconds"), (120000, "2 minutes"), (0, "Never")];
 
+    static readonly (string Tag, string Label)[] KnobChoices = [("never", "Never"), ("hover", "On hover"), ("always", "Always")];
+
     static Settings S => Store.Current;
 
     public NowPlayingPage()
@@ -15,6 +17,8 @@ public sealed partial class NowPlayingPage : UserControl
         InitializeComponent();
         Select(Modes, S.AfterPeek);
         Select(Bars, S.ProgressStyle);
+        foreach (var c in KnobChoices) Knob.Items.Add(c.Label);
+        Knob.SelectedIndex = Math.Max(0, Array.FindIndex(KnobChoices, c => c.Tag == S.PlayheadKnob));
         Fill(Peek, PeekChoices, S.MediaPeekMs);
         Fill(Hide, HideChoices, S.MediaHideMs);
         // The sample wave drifts one wavelength per 1.6 s, as on the island; it stays still when Windows animations are off.
@@ -42,6 +46,7 @@ public sealed partial class NowPlayingPage : UserControl
 
     void OnMode(object sender, SelectionChangedEventArgs e) { if (Modes.SelectedItem is GridViewItem { Tag: string t }) S.AfterPeek = t; }
     void OnBar(object sender, SelectionChangedEventArgs e) { if (Bars.SelectedItem is GridViewItem { Tag: string t }) S.ProgressStyle = t; }
+    void OnKnob(object sender, SelectionChangedEventArgs e) { if (Knob.SelectedIndex >= 0) S.PlayheadKnob = KnobChoices[Knob.SelectedIndex].Tag; }
     void OnPeek(object sender, SelectionChangedEventArgs e) { if (Peek.SelectedIndex >= 0) S.MediaPeekMs = PeekChoices[Peek.SelectedIndex].Ms; }
     void OnHide(object sender, SelectionChangedEventArgs e) { if (Hide.SelectedIndex >= 0) S.MediaHideMs = HideChoices[Hide.SelectedIndex].Ms; }
 }

@@ -18,6 +18,8 @@ if ($LASTEXITCODE -ne 0) { throw 'settings publish failed' }
 
 Copy-Item "$root\island\out\release\statlet.exe", "$root\island\out\release\Manrope.ttf", "$root\island\assets\OFL.txt" $stage
 Get-ChildItem $stage -Recurse -Filter *.pdb | Remove-Item   # debug symbols embed the build machine's paths
+# The tray menu's Settings item starts settings\StatletSettings.exe beside statlet.exe: refuse to build a setup without it.
+foreach ($need in "statlet.exe", "settings\StatletSettings.exe") { if (-not (Test-Path "$stage\$need")) { throw "stage is missing $need" } }
 
 & $iscc /Qp "/DAppVersion=$version" "/DStage=$stage" "$root\installer\statlet.iss"
 if ($LASTEXITCODE -ne 0) { throw 'installer build failed' }

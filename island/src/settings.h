@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -11,7 +12,7 @@
 // One flat JSON object; a missing or malformed key keeps its default, and every value is clamped (the file is
 // hand-editable). Example:
 //   {"topOffset":10,"focusMinutes":25,"warnAt":80,"critAt":95,"openOnHighUsage":true,"afterPeek":"tuck",
-//    "progressStyle":"wave","mediaPeekMs":4000,"mediaHideMs":30000,"glassTint":"#1C1E24","tintOpacity":0.52,
+//    "showWeekday":true,"progressStyle":"wave","playheadKnob":"never","artAccent":false,"mediaPeekMs":4000,"mediaHideMs":30000,"glassTint":"#1C1E24","tintOpacity":0.52,
 //    "followAccent":true,"accentColor":"#4CC2FF","collapsedR":11,"expandedR":22,"textScale":1,"bounce":40,"speed":60}
 
 // The folder holding settings.json and island.log: STATLET_DATA_DIR when set (tests), else %LOCALAPPDATA%\Statlet.
@@ -35,6 +36,41 @@ inline std::string_view SettingRaw(std::string_view json, std::string_view key) 
     while (!v.empty() && (v.front() == ' ' || v.front() == '\t' || v.front() == '\r' || v.front() == '\n' || v.front() == '"')) v.remove_prefix(1);
     while (!v.empty() && (v.back() == ' ' || v.back() == '\t' || v.back() == '\r' || v.back() == '\n' || v.back() == '"')) v.remove_suffix(1);
     return v;
+}
+
+// A quoted string value, commas allowed (SettingRaw stops at the first one). Empty when absent or not a string.
+inline std::string_view SettingString(std::string_view json, std::string_view key) {
+    std::string quoted = "\"" + std::string(key) + "\"";
+    size_t at = json.find(quoted);
+    if (at == json.npos) return {};
+    at = json.find(':', at + quoted.size());
+    if (at == json.npos) return {};
+    size_t open = json.find_first_not_of(" \t\r\n", at + 1);
+    if (open == json.npos || json[open] != '"') return {};
+    size_t close = json.find('"', open + 1);
+    return close == json.npos ? std::string_view{} : json.substr(open + 1, close - open - 1);
+}
+
+// "status,clock,usage" in any order. Anything that is not exactly the three names once each leaves `out` as it was.
+inline void SettingRestOrder(std::string_view json, std::array<Tokens::RestBlock, 3>& out) {
+    auto text = SettingString(json, "restOrder");
+    std::array<Tokens::RestBlock, 3> got{};
+    int n = 0;
+    unsigned seen = 0;
+    while (!text.empty() && n < 3) {
+        size_t comma = text.find(',');
+        auto word = text.substr(0, comma);
+        text = comma == text.npos ? std::string_view{} : text.substr(comma + 1);
+        Tokens::RestBlock b;
+        if (word == "status") b = Tokens::RestBlock::Status;
+        else if (word == "clock") b = Tokens::RestBlock::Clock;
+        else if (word == "usage") b = Tokens::RestBlock::Usage;
+        else return;
+        if (seen & (1u << int(b))) return;
+        seen |= 1u << int(b);
+        got[n++] = b;
+    }
+    if (n == 3 && text.empty()) out = got;
 }
 
 inline void SettingNumber(std::string_view json, std::string_view key, float& out, float lo, float hi) {
@@ -73,6 +109,28 @@ inline void SpringFromFeel(float bounce, float speed, float& stiffness, float& d
     damping = ratio * 2.f * std::sqrt(stiffness);
 }
 
+// The island's own small state (state.json beside settings.json). The island never edits settings.json, so it cannot
+// race the settings app. Today: which time the right-hand label shows.
+// Writes state.json whole, then renames it over; a failure removes the temp file and returns false (settings.json is never touched).
+inline bool WriteState(const std::wstring& dir, bool timeTotal) {
+    if (dir.empty()) return true;  // benchmarks run without a data folder
+    std::wstring file = dir + L"\\state.json", tmp = file + L".tmp";
+    bool ok = false;
+    if (FILE* f = _wfopen(tmp.c_str(), L"wb")) {
+        ok = fputs(timeTotal ? "{\"timeTotal\":true}" : "{\"timeTotal\":false}", f) >= 0;
+        ok = fclose(f) == 0 && ok;
+    }
+    ok = ok && MoveFileExW(tmp.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING);
+    if (!ok) {
+        DWORD why = GetLastError();  // the caller logs this; the cleanup below must not replace it
+        DeleteFileW(tmp.c_str());
+        SetLastError(why);
+    }
+    return ok;
+}
+
+inline void LoadState(Tokens& t, std::string_view json) { SettingBool(json, "timeTotal", t.timeTotal); }
+
 inline void LoadSettings(Tokens& t, std::string_view json) {
     SettingNumber(json, "topOffset", t.topOffset, 0, 48);
     SettingInt(json, "focusMinutes", t.focusMinutes, 1, 180);
@@ -81,6 +139,13 @@ inline void LoadSettings(Tokens& t, std::string_view json) {
     t.critAt = std::max(t.critAt, t.warnAt + 5);
     SettingBool(json, "openOnHighUsage", t.openOnHighUsage);
     SettingBool(json, "instantOpen", t.instantOpen);
+    SettingBool(json, "showWeekday", t.showWeekday);
+    SettingBool(json, "downloadIcon", t.downloadIcon);
+    SettingBool(json, "btIcon", t.btIcon);
+    SettingBool(json, "soundScreenshot", t.soundScreenshot);
+    SettingBool(json, "soundDownloadDone", t.soundDownloadDone);
+    SettingBool(json, "soundFocusDone", t.soundFocusDone);
+    SettingRestOrder(json, t.restOrder);
     auto peek = SettingRaw(json, "afterPeek");
     if (peek == "tuck") t.afterPeek = Tokens::AfterPeek::Tuck;
     else if (peek == "clock") t.afterPeek = Tokens::AfterPeek::Clock;
@@ -88,6 +153,14 @@ inline void LoadSettings(Tokens& t, std::string_view json) {
     auto progress = SettingRaw(json, "progressStyle");
     if (progress == "wave") t.progressStyle = Tokens::ProgressStyle::Wave;
     else if (progress == "line") t.progressStyle = Tokens::ProgressStyle::Line;
+    else if (progress == "segmented") t.progressStyle = Tokens::ProgressStyle::Segmented;
+    else if (progress == "hairline") t.progressStyle = Tokens::ProgressStyle::Hairline;
+    else if (progress == "gradient") t.progressStyle = Tokens::ProgressStyle::Gradient;
+    auto knob = SettingRaw(json, "playheadKnob");
+    if (knob == "never") t.knob = Tokens::Knob::Never;
+    else if (knob == "hover") t.knob = Tokens::Knob::Hover;
+    else if (knob == "always") t.knob = Tokens::Knob::Always;
+    SettingBool(json, "artAccent", t.artAccent);
     SettingInt(json, "mediaPeekMs", t.mediaPeekMs, 1000, 15000);
     SettingInt(json, "mediaHideMs", t.mediaHideMs, 0, 600000);  // 0: never hide a paused player
     SettingColor(json, "glassTint", t.glassTint);

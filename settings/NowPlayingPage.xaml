@@ -132,7 +132,7 @@
                     </StackPanel>
                 </StackPanel>
             </GridViewItem>
-            <GridViewItem Tag="line" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Straight">
+            <GridViewItem Tag="line" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Solid">
                 <StackPanel Spacing="10" Padding="12">
                     <Grid Style="{StaticResource Stage}" Padding="0">
                         <Grid Width="320" Height="56" CornerRadius="22" Background="#DB1C1E24" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="18,0" ColumnSpacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -144,12 +144,79 @@
                         </Grid>
                     </Grid>
                     <StackPanel>
-                        <TextBlock Text="Straight" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Solid" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <TextBlock Text="A plain line, no motion" Style="{StaticResource RowDesc}" />
                     </StackPanel>
                 </StackPanel>
             </GridViewItem>
+            <GridViewItem Tag="segmented" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Segmented ticks">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}" Padding="0">
+                        <Grid Width="320" Height="56" CornerRadius="22" Background="#DB1C1E24" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="18,0" ColumnSpacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="1:12" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                            <Line Grid.Column="1" X1="3" Y1="7" X2="196" Y2="7" Stroke="#33F5F6F8" StrokeThickness="6" StrokeDashArray="1 0.33" VerticalAlignment="Center" />
+                            <Line Grid.Column="1" X1="3" Y1="7" X2="120" Y2="7" Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="6" StrokeDashArray="1 0.33" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="3:24" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                        </Grid>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Segmented" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Rows of small ticks that fill as the song plays" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+            <GridViewItem Tag="hairline" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Hairline">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}" Padding="0">
+                        <Grid Width="320" Height="56" CornerRadius="22" Background="#DB1C1E24" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="18,0" ColumnSpacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="1:12" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                            <Line Grid.Column="1" X1="1" Y1="7" X2="196" Y2="7" Stroke="#33F5F6F8" StrokeThickness="1.5" VerticalAlignment="Center" />
+                            <Line Grid.Column="1" X1="1" Y1="7" X2="120" Y2="7" Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="1.5" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="3:24" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                        </Grid>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Hairline" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="A thin line, no dot at the end" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
+            <GridViewItem Tag="gradient" Style="{StaticResource Tile}" Width="380" AutomationProperties.Name="Gradient">
+                <StackPanel Spacing="10" Padding="12">
+                    <Grid Style="{StaticResource Stage}" Padding="0">
+                        <Grid Width="320" Height="56" CornerRadius="22" Background="#DB1C1E24" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="18,0" ColumnSpacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="1:12" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                            <Line Grid.Column="1" X1="2" Y1="7" X2="196" Y2="7" Stroke="#33F5F6F8" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
+                            <Line Grid.Column="1" X1="2" Y1="7" X2="120" Y2="7" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center">
+                                <Line.Stroke>
+                                    <LinearGradientBrush MappingMode="Absolute" StartPoint="2,0" EndPoint="120,0">
+                                        <GradientStop Offset="0" Color="{ThemeResource SystemAccentColorDark1}" />
+                                        <GradientStop Offset="1" Color="{ThemeResource SystemAccentColorLight2}" />
+                                    </LinearGradientBrush>
+                                </Line.Stroke>
+                            </Line>
+                            <TextBlock Grid.Column="2" Text="3:24" Style="{StaticResource MiniText}" FontSize="11" Foreground="#9EF5F6F8" />
+                        </Grid>
+                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="Gradient" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="The played part fades up to the accent colour" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                </StackPanel>
+            </GridViewItem>
         </GridView>
+
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Playhead dot" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="A dot on the bar at the current position. Click the time on the right to switch between time left and total" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ComboBox x:Name="Knob" Grid.Column="1" MinWidth="150" VerticalAlignment="Center" SelectionChanged="OnKnob" AutomationProperties.Name="Playhead dot" />
+        </Grid>
 
         <TextBlock Text="Timing" Style="{StaticResource Section}" />
         <Grid Style="{StaticResource Row}">

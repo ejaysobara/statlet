@@ -16,7 +16,41 @@ public sealed partial class GeneralPage : UserControl
         ShowStartupNote();
         foreach (int m in FocusChoices) FocusLength.Items.Add($"{m} minutes");
         FocusLength.SelectedIndex = Math.Max(0, Array.IndexOf(FocusChoices, (int)S.FocusMinutes));
+        FillOrder();
     }
+
+    // The Order list: labels in the island's order; RestOrder holds the keys.
+    static readonly Dictionary<string, string> BlockLabels = new() { ["status"] = "Status icon", ["clock"] = "Date and time", ["usage"] = "CPU and memory bars" };
+    readonly System.Collections.ObjectModel.ObservableCollection<string> order = [];
+
+    void FillOrder()
+    {
+        order.Clear();
+        foreach (string key in S.RestOrder.Split(',')) order.Add(BlockLabels[key]);
+        OrderList.ItemsSource = order;
+    }
+
+    void SaveOrder() => S.RestOrder = string.Join(',', order.Select(label => BlockLabels.First(p => p.Value == label).Key));
+
+    void OnOrderDragged(ListViewBase sender, DragItemsCompletedEventArgs e) => SaveOrder();
+
+    void OnOrderSelected(object sender, SelectionChangedEventArgs e)
+    {
+        OrderUp.IsEnabled = OrderList.SelectedIndex > 0;
+        OrderDown.IsEnabled = OrderList.SelectedIndex >= 0 && OrderList.SelectedIndex < order.Count - 1;
+    }
+
+    void MoveSelected(int by)
+    {
+        int from = OrderList.SelectedIndex, to = from + by;
+        if (from < 0 || to < 0 || to >= order.Count) return;
+        order.Move(from, to);
+        OrderList.SelectedIndex = to;
+        SaveOrder();
+    }
+
+    void OnOrderUp(object sender, RoutedEventArgs e) => MoveSelected(-1);
+    void OnOrderDown(object sender, RoutedEventArgs e) => MoveSelected(1);
 
     public string Px(double v) => $"{v:0} px";
     public string Pct(double v) => $"{v:0}%";

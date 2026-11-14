@@ -12,8 +12,10 @@ namespace StatletSettings;
 public sealed class Settings : INotifyPropertyChanged
 {
     double topOffset = 10, focusMinutes = 25, warnAt = 80, critAt = 95;
-    bool openOnHighUsage = true, followAccent = true, instantOpen, autostartAsked;
-    string afterPeek = "tuck", progressStyle = "wave", glassTint = "#1C1E24", accentColor = "#4CC2FF";
+    bool openOnHighUsage = true, followAccent = true, instantOpen, autostartAsked, artAccent, showWeekday = true;
+    bool btIcon = true, downloadIcon = true, soundScreenshot = true, soundDownloadDone, soundFocusDone = true;  // defaults match the island's Tokens
+    string restOrder = DefaultRestOrder;
+    string afterPeek = "tuck", progressStyle = "wave", playheadKnob = "never", glassTint = "#1C1E24", accentColor = "#4CC2FF";
     double mediaPeekMs = 4000, mediaHideMs = 30000, tintOpacity = 0.52, collapsedR = 11, expandedR = 22, textScale = 1, bounce = 40, speed = 60;
 
     public double TopOffset { get => topOffset; set => Set(ref topOffset, value); }
@@ -21,8 +23,21 @@ public sealed class Settings : INotifyPropertyChanged
     public double WarnAt { get => warnAt; set { Set(ref warnAt, value); if (CritAt < value + 5) CritAt = Math.Min(100, value + 5); } }
     public double CritAt { get => critAt; set => Set(ref critAt, value); }
     public bool OpenOnHighUsage { get => openOnHighUsage; set => Set(ref openOnHighUsage, value); }
+    public bool ShowWeekday { get => showWeekday; set => Set(ref showWeekday, value); }
+    public bool BtIcon { get => btIcon; set => Set(ref btIcon, value); }
+    public bool DownloadIcon { get => downloadIcon; set => Set(ref downloadIcon, value); }
+    public bool SoundScreenshot { get => soundScreenshot; set => Set(ref soundScreenshot, value); }
+    public bool SoundDownloadDone { get => soundDownloadDone; set => Set(ref soundDownloadDone, value); }
+    public bool SoundFocusDone { get => soundFocusDone; set => Set(ref soundFocusDone, value); }
+    // The rest line's blocks left to right, "status,clock,usage" in any order. Anything that is not exactly those three
+    // names once each (a hand-edited file) reads as the default order, like the island does (island/src/settings.h).
+    public const string DefaultRestOrder = "status,clock,usage";
+    public string RestOrder { get => restOrder; set => Set(ref restOrder, ValidRestOrder(value) ? value : DefaultRestOrder); }
+    internal static bool ValidRestOrder(string? value) => value?.Split(',').OrderBy(s => s, StringComparer.Ordinal).SequenceEqual(["clock", "status", "usage"]) == true;
     public string AfterPeek { get => afterPeek; set => Set(ref afterPeek, value); }
     public string ProgressStyle { get => progressStyle; set => Set(ref progressStyle, value); }
+    public string PlayheadKnob { get => playheadKnob; set => Set(ref playheadKnob, value); }  // never, hover, always
+    public bool ArtAccent { get => artAccent; set => Set(ref artAccent, value); }
     public double MediaPeekMs { get => mediaPeekMs; set => Set(ref mediaPeekMs, value); }
     public double MediaHideMs { get => mediaHideMs; set => Set(ref mediaHideMs, value); }
     public string GlassTint { get => glassTint; set => Set(ref glassTint, value); }
@@ -56,7 +71,7 @@ public sealed class Settings : INotifyPropertyChanged
     public void ResetAppearance()
     {
         var d = new Settings();
-        GlassTint = d.GlassTint; TintOpacity = d.TintOpacity; FollowAccent = d.FollowAccent; AccentColor = d.AccentColor;
+        GlassTint = d.GlassTint; TintOpacity = d.TintOpacity; FollowAccent = d.FollowAccent; AccentColor = d.AccentColor; ArtAccent = d.ArtAccent;
         CollapsedR = d.CollapsedR; ExpandedR = d.ExpandedR; TextScale = d.TextScale; Bounce = d.Bounce; Speed = d.Speed; InstantOpen = d.InstantOpen;
     }
 }
@@ -125,6 +140,9 @@ public static class Store
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Thread.Sleep(40); }
         }
+        // Ten attempts failed: say so, since the island would otherwise rebuild from the old file with no trace.
+        try { File.AppendAllText(Path.Combine(Dir, "settings-app.log"), $"{DateTime.Now:s} settings.json was not saved after 10 attempts\n"); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     // --- Start with Windows: the per-user Run key points at the island beside this app's folder ---

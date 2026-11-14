@@ -7,7 +7,7 @@
 <p align="center">
   <img alt="Windows 11" src="https://img.shields.io/badge/Windows-11%20x64-0078D4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green">
-  <img alt="Release v1.0.0" src="https://img.shields.io/badge/release-v1.0.0-blue">
+  <img alt="Release v2.0.0" src="https://img.shields.io/badge/release-v2.0.0-blue">
 </p>
 
 <p align="center">
@@ -18,11 +18,11 @@ A small floating "island" at the top-center of your Windows 11 screen, in the st
 It sits quietly as a thin status pill, then opens for the things you care about: volume, battery, network, a Focus
 timer and the music that's playing. It is built to cost almost nothing while idle: it wakes only when something changes.
 
-**Status: v1.0.0.** Statlet is a working name and may change.
+**Status: v2.0.0.** Statlet is a working name and may change.
 
 ## What it does
 
-**Always visible: the rest line.** Date and time, plus two mini bars for CPU (top) and RAM (bottom). Bars turn amber at
+**Always visible: the rest line.** Weekday, date and time (the pill is sized to the day, so it never twitches), plus two mini bars for CPU (top) and RAM (bottom). A small status slot shows a download in progress, a Bluetooth device connecting or a screenshot taken. Choose the order in Settings > General. Bars turn amber at
 80% and red at 95%. The pill resizes to fit what it shows.
 
 **Hover to open.** Hovering opens a larger view with labeled CPU and RAM rows. If CPU or RAM stays above 90% for 30
@@ -36,7 +36,10 @@ seconds, the island opens by itself so you notice.
 
 **Now playing.** Reads Windows' media sessions, so it works with Spotify, Apple Music, browsers and any player in the
 Windows media flyout. A new track peeks with album art, title and artist. Hover for the media card: progress bar,
-elapsed and remaining time, previous / play-pause / next.
+elapsed and remaining time, previous / play-pause / next. Pick one of five progress bar styles (Wavy, Solid, Segmented,
+Hairline, Gradient), an optional playhead dot, and let the bar take the album art's colour.
+
+**Screenshots and sounds.** Tray icon > Copy screenshot or Save screenshot captures the monitor your cursor is on, without the pill. Optional Windows sounds for a screenshot, a finished download and a finished Focus timer.
 
 **Settings app.** Tray icon > Settings. Choose how the island looks (glass tint and strength, accent color, shape and
 text), how far it sits from the top, the Focus length, the CPU/RAM warning levels, what the rest line shows while music
@@ -101,6 +104,7 @@ repository on GitHub and choose **Watch > Custom > Releases**, or follow the rel
 - Unsigned, so SmartScreen warns. No auto-update (see Updates).
 - Autostart is opt-in (Settings > General > Start with Windows). It adds one value under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; turning it off removes it.
+- Screenshots work from the tray menu only (not Snipping Tool or Print Screen yet). Downloads are seen in the root of your Downloads folder only.
 - Tested on one laptop with one external monitor, so other multi-monitor setups may misbehave.
 - Statlet only writes to `%LOCALAPPDATA%\Statlet`: your settings and a small event log (`island.log`, app events only).
   Nothing is sent anywhere.

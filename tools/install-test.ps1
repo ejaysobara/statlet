@@ -39,8 +39,22 @@ try {
     Check ((Get-ItemProperty $run -Name Statlet).Statlet -eq "`"$dir\statlet.exe`"") 'old Run value rewritten to the installed path'
     Check ((Hash "$data\settings.json") -eq $settingsHash) 'settings.json untouched by install'
 
-    Start-Process explorer.exe "`"$dir\settings\StatletSettings.exe`""
-    Check (WaitFor { (Settings).Count -ge 1 } 15) 'Settings opens'
+    # The tray menu's Settings item (right-click the tray icon, 4th entry) must start the Settings app installed beside the island.
+    # A posted tray message opens the menu but the keyboard never reaches it (foreground lock) and the classic popup menu has no UI Automation
+    # children, so find the menu window (class #32768) and click the 4th row by geometry: 3.2 px padding + 3.5 rows of 20.8 px, at the system DPI.
+    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TrayT { [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; } [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowW(string c, string t); [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e); [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern int GetDpiForSystem(); }'
+    [void][TrayT]::SetProcessDPIAware()
+    $isl = [TrayT]::FindWindowW('StatletIsland', [NullString]::Value)   # $null would reach the API as "" and match only an empty title
+    [void][TrayT]::PostMessageW($isl, 0x8002, [IntPtr]1, [IntPtr]0x205)   # WM_APP_TRAY, right button up: opens the tray menu
+    $menu = [IntPtr]::Zero
+    for ($n = 0; $n -lt 20 -and $menu -eq [IntPtr]::Zero; $n++) { Start-Sleep -Milliseconds 250; $menu = [TrayT]::FindWindowW('#32768', $null) }
+    if ($menu -ne [IntPtr]::Zero) {
+        $m = New-Object TrayT+RECT; [void][TrayT]::GetWindowRect($menu, [ref]$m); $s = [TrayT]::GetDpiForSystem() / 96.0
+        [void][TrayT]::SetCursorPos([int](($m.L + $m.R) / 2), [int]($m.T + 76 * $s)); Start-Sleep -Milliseconds 400
+        [TrayT]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [TrayT]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+    }
+    Check ($menu -ne [IntPtr]::Zero) 'tray menu opens'
+    Check (WaitFor { (Settings).Count -ge 1 } 15) 'tray menu > Settings opens the installed Settings app'
     $before = @(Island)[0].Id
     Start-Process explorer.exe "`"$dir\statlet.exe`""   # as the Start menu entry would, while the island runs
     Start-Sleep 3

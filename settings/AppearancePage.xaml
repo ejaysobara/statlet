@@ -172,6 +172,15 @@
                     <TextBlock Text="Accent color" Style="{StaticResource RowTitle}" VerticalAlignment="Center" />
                     <StackPanel x:Name="Accents" Grid.Column="1" Orientation="Horizontal" Spacing="6" AutomationProperties.Name="Accent color" />
                 </Grid>
+                <Grid Style="{StaticResource Row}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Use album art colour on the music card" Style="{StaticResource RowTitle}" />
+                        <TextBlock Text="The bar, equalizer and play button take the cover's main colour. Nothing else changes" Style="{StaticResource RowDesc}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.ArtAccent, Mode=TwoWay}"
+                                  AutomationProperties.Name="Use album art colour on the music card" />
+                </Grid>
 
                 <TextBlock Text="Shape and text" Style="{StaticResource Section}" />
                 <Grid Style="{StaticResource Row}">
