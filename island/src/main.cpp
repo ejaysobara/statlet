@@ -16,6 +16,8 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#include <mmsystem.h>
 #include <windowsx.h>
 #include <shellscalingapi.h>
 #include <wtsapi32.h>
@@ -26,10 +28,15 @@
 #include "events.h"
 #include "gfx.h"
 #include "log.h"
+#include "bluetooth.h"
+#include "capture.h"
+#include "clock.h"
+#include "downloads.h"
 #include "media.h"
 #include "placement.h"
 #include "power.h"
 #include "settings.h"
+#include "widgets.h"
 #include "shape_math.h"
 #include "stats.h"
 #include "takeover.h"
@@ -39,9 +46,9 @@ using namespace std::chrono_literals;
 using winrt::Windows::UI::ViewManagement::UIColorType;
 using winrt::Windows::UI::ViewManagement::UISettings;
 
-enum : UINT { WM_APP_SETTINGS = WM_APP + 1, WM_APP_TRAY, WM_APP_VOLUME, WM_APP_NET, WM_APP_MEDIA, WM_APP_HOLD };
-enum : UINT_PTR { TimerHover = 1, TimerClock, TimerStats, TimerBenchToggle, TimerBenchEnd, TimerTakeover, TimerNetDebounce, TimerFocusEnd, TimerDemo, TimerPeek, TimerMediaHide, TimerMediaClock, TimerReload, TimerRevalidate, TimerAwayReturn, TimerAwayRecheck };
-enum : UINT { MenuQuit = 1, MenuFocus, MenuSettings };
+enum : UINT { WM_APP_SETTINGS = WM_APP + 1, WM_APP_TRAY, WM_APP_VOLUME, WM_APP_NET, WM_APP_MEDIA, WM_APP_HOLD, WM_APP_BT, WM_APP_SHOT };
+enum : UINT_PTR { TimerHover = 1, TimerClock, TimerStats, TimerBenchToggle, TimerBenchEnd, TimerTakeover, TimerNetDebounce, TimerFocusEnd, TimerDemo, TimerPeek, TimerMediaHide, TimerMediaClock, TimerReload, TimerRevalidate, TimerAwayReturn, TimerAwayRecheck, TimerDownload, TimerStatusPeek, TimerShot };
+enum : UINT { MenuQuit = 1, MenuFocus, MenuSettings, MenuCopyShot, MenuSaveShot };
 
 static Tokens t;
 static HWND hwnd;
@@ -59,6 +66,36 @@ static std::unique_ptr<Gfx> gfx;
 static std::unique_ptr<RoundedShape> shape;
 static std::unique_ptr<Acrylic> acrylic;
 static std::unique_ptr<Text> clockText, focusText;  // the rest line's date and time; "Focus 25m" in accent
+static std::unique_ptr<Text> measureText;           // scratch text in the clock's style, for the day-fitted pill
+// The status slot (v2 items 6-8): one Fluent glyph before the rest line's content. A persistent glyph (download running) and a
+// peek (Bluetooth, download done, screenshot) share it; a peek wins until it ends, then the persistent glyph returns.
+static std::unique_ptr<Text> statusIcon;
+static wchar_t statusPersistent, statusPeek, slotShown;  // 0: none; slotShown is what the slot draws now
+static wchar_t StatusGlyph() { return statusPeek ? statusPeek : statusPersistent; }
+
+// Event sounds (item 9): Windows' own sounds through the user's sound scheme and volume, so "No sounds" in Windows silences
+// them and no sound files ship. One switch each in the settings; Bluetooth has none (Windows plays its own).
+// STATLET_SOUND_SILENT=1 logs the sound without playing it (the tests set it).
+enum class Event { DownloadDone, Screenshot, FocusDone };
+static void PlayEventSound(Event e) {
+    bool on = e == Event::Screenshot ? t.soundScreenshot : e == Event::DownloadDone ? t.soundDownloadDone : t.soundFocusDone;
+    if (!on) return;
+    Log("sound %s", e == Event::Screenshot ? "screenshot" : e == Event::DownloadDone ? "download" : "focus");
+    if (getenv("STATLET_SOUND_SILENT")) return;
+    PlaySoundW(e == Event::FocusDone ? L"Notification.Reminder" : L"Notification.Default", nullptr, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+}
+static std::wstring widestTime;                     // the widest time at that style (see MeasureWidestTime)
+static float dayExtra = 0;                          // how much wider the day's widest line is than the current one
+
+// The widest time the clock can show. Measured when the island is built (text scale and DPI come with a rebuild), not every minute.
+static void MeasureWidestTime() {
+    measureText = std::make_unique<Text>(*gfx, TextStyle{t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    float best = -1;
+    for (auto& s : WidestTimeSamples()) {
+        measureText->Set(s);
+        if (measureText->Width() > best) best = measureText->Width(), widestTime = s;
+    }
+}
 static std::unique_ptr<Bar> cpuBar, ramBar;         // the rest line's mini bars
 static wuc::ContainerVisual statsFace{nullptr}, cardFace{nullptr};  // the open faces: hovered usage, takeover card
 struct StatRow {  // one labeled usage row of the hovered face
@@ -107,6 +144,10 @@ static wuc::CompositionPropertySet mediaProps{nullptr};  // P: track progress 0.
 static wuc::SpriteVisual waveSprite{nullptr};
 static wuc::CompositionDrawingSurface waveSurface{nullptr};
 static wuc::ShapeVisual flatFill{nullptr};
+static wuc::ShapeVisual knobVisual{nullptr};                 // the playhead dot; null when Tokens::knob is Never
+static wuc::CompositionColorGradientStop gradientStart{nullptr}, gradientEnd{nullptr};  // Gradient style: the played end, tracks the media colour
+static Rgba artColor{};                                      // dominant colour of the current track's art
+static bool haveArt, knobHot;
 static bool eqRunning, driftRunning, waveShowing = true;
 struct TransportButton {
     std::unique_ptr<Text> glyph;
@@ -158,11 +199,16 @@ static void BuildIsland() {
 
     // Collapsed: the idle clock, centered. Offsets are rounded to whole physical pixels so text stays crisp at rest.
     clockText = std::make_unique<Text>(*gfx, TextStyle{t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    MeasureWidestTime();
     focusText = std::make_unique<Text>(*gfx, TextStyle{t.typeClock, DWRITE_FONT_WEIGHT_SEMI_BOLD, accent, true});
     cpuBar = std::make_unique<Bar>(*gfx, t.restBarW, t.restBarH, t.track, accent);
     ramBar = std::make_unique<Bar>(*gfx, t.restBarW, t.restBarH, t.track, accent);
+    statusIcon = MakeIcon(*gfx, t.glyphDownload, t.statusGlyph, accent);
+    statusIcon->visual.IsVisible(false);
+    slotShown = 0;  // the rebuild starts with an empty slot; LayoutCollapsed shows whatever is current
     restRow = compositor.CreateContainerVisual();
-    for (auto v : {focusText->visual.as<wuc::Visual>(), clockText->visual.as<wuc::Visual>(), cpuBar->visual.as<wuc::Visual>(), ramBar->visual.as<wuc::Visual>()})
+    for (auto v : {focusText->visual.as<wuc::Visual>(), clockText->visual.as<wuc::Visual>(), cpuBar->visual.as<wuc::Visual>(), ramBar->visual.as<wuc::Visual>(),
+                   statusIcon->visual.as<wuc::Visual>()})
         restRow.Children().InsertAtTop(v);
     collapsedFace = compositor.CreateContainerVisual();
     collapsedFace.Children().InsertAtTop(restRow);
@@ -254,11 +300,40 @@ static void MoveTo(wuc::Visual const& v, wuc::ContainerVisual const& parent) {
     parent.Children().InsertAtTop(v);
 }
 
-// The collapsed rest line is the rest row (Focus label, clock, CPU/RAM bars; plus the art before and the equalizer after
-// when tucked) or the music row (art, title, artist, equalizer), cross-faded. The collapsed width fits whichever shows.
+// Puts `g` in the status slot (0 empties it). A download breathes, a peek fades in over 150 ms, and with Windows animations
+// off both are steady. A peek's fade-out is EndStatusPeek's: it keeps the slot (and its width) until the glyph is gone.
+static void AnimateSlot(wchar_t g) {
+    auto v = statusIcon->visual;
+    v.StopAnimation(L"Opacity");
+    v.IsVisible(g != 0);
+    v.Opacity(1);
+    if (g) statusIcon->Set({&g, 1});
+    if (!g || !AnimationsEnabled()) return;
+    auto a = compositor.CreateScalarKeyFrameAnimation();
+    if (g == t.glyphDownload) {
+        auto ease = compositor.CreateCubicBezierEasingFunction({0.37f, 0}, {0.63f, 1});
+        a.InsertKeyFrame(0, 0.55f);  // starts dim: after a peek's fade-out the icon rises instead of popping to full
+        a.InsertKeyFrame(0.5f, 1, ease);
+        a.InsertKeyFrame(1, 0.55f, ease);
+        a.Duration(std::chrono::milliseconds(t.breatheMs));
+        a.IterationBehavior(wuc::AnimationIterationBehavior::Forever);
+    } else {
+        a.InsertKeyFrame(0, 0);
+        a.InsertKeyFrame(1, 1);
+        a.Duration(std::chrono::milliseconds(150));
+    }
+    v.StartAnimation(L"Opacity", a);
+}
+
+// The collapsed rest line is the rest row (status slot, Focus label, clock, CPU/RAM bars; plus the art before and the
+// equalizer after when tucked) or the music row (art, title, artist, equalizer), cross-faded. The collapsed width fits whichever
+// shows. The slot leads the rest row and the Music row (the title gives up its room); the song-start peek has none.
 static void LayoutCollapsed() {
     MediaRow row = RowFor(mediaShown, peeking, t.afterPeek);
-    bool tucked = row == MediaRow::Tucked, music = row == MediaRow::Peek || row == MediaRow::Music;
+    bool tucked = row == MediaRow::Tucked, music = row == MediaRow::Peek || row == MediaRow::Music, slotInMusic = row == MediaRow::Music;
+    wchar_t slot = row == MediaRow::Peek ? 0 : StatusGlyph();
+    if (slot != slotShown) AnimateSlot(slotShown = slot);
+    if (slot) MoveTo(statusIcon->visual, slotInMusic ? peekRow : restRow);
     MoveTo(artSmall->visual, music ? peekRow : restRow);
     MoveTo(equalizer, music ? peekRow : restRow);
     artSmall->visual.IsVisible(tucked || music);
@@ -268,34 +343,51 @@ static void LayoutCollapsed() {
     focusText->visual.IsVisible(f);
     float h = std::max(clockText->Height(), tucked ? t.artSmall : 0.f), x = 0;
     auto mid = [&](float itemH) { return std::round((h - itemH) / 2); };
-    if (tucked) {
-        artSmall->visual.Offset({0, mid(t.artSmall), 0});
-        x = t.artSmall + t.restGap;
-    }
-    if (f) {
-        focusText->visual.Offset({x, mid(focusText->Height()), 0});
-        x += focusText->Width() + t.restGap;
-    }
-    clockText->visual.Offset({x, mid(clockText->Height()), 0});
-    x += clockText->Width() + t.restGap;
-    float gap = 3, barsY = mid(2 * t.restBarH + gap);
-    cpuBar->visual.Offset({x, barsY, 0});
-    ramBar->visual.Offset({x, barsY + t.restBarH + gap, 0});
-    x += t.restBarW;
-    if (tucked) {
-        equalizer.Offset({x + t.restGap, mid(t.eqH), 0});
-        x += t.restGap + EqWidth();
-    }
+    float slotX = slot ? t.statusSlotW + t.restGap : 0;
+    // The blocks in the user's order (restOrder), each followed by restGap; the last gap is taken back. The width is the sum
+    // of the same blocks whatever the order, and the clock block's extra (dayExtra) stays with the clock.
+    for (RestItem item : RestSequence(t.restOrder, tucked)) switch (item) {
+        case RestItem::Status:
+            if (!slot || slotInMusic) break;
+            statusIcon->visual.Offset({x + std::round((t.statusSlotW - statusIcon->Width()) / 2), mid(statusIcon->Height()), 0});
+            x += slotX;
+            break;
+        case RestItem::Art:
+            artSmall->visual.Offset({x, mid(t.artSmall), 0});
+            x += t.artSmall + t.restGap;
+            break;
+        case RestItem::Clock:
+            if (f) {
+                focusText->visual.Offset({x, mid(focusText->Height()), 0});
+                x += focusText->Width() + t.restGap;
+            }
+            clockText->visual.Offset({x, mid(clockText->Height()), 0});
+            x += clockText->Width() + t.restGap;
+            break;
+        case RestItem::Usage: {
+            float gap = 3, barsY = mid(2 * t.restBarH + gap);
+            cpuBar->visual.Offset({x, barsY, 0});
+            ramBar->visual.Offset({x, barsY + t.restBarH + gap, 0});
+            x += t.restBarW + t.restGap;
+            break;
+        }
+        case RestItem::Equalizer:
+            equalizer.Offset({x, mid(t.eqH), 0});
+            x += EqWidth() + t.restGap;
+            break;
+        }
+    if (x > 0) x -= t.restGap;
     restRow.Size({x, h});
 
     // Music row: the title gets the room the width cap leaves; the artist follows (peek only) when a few letters fit.
     float limit = (row == MediaRow::Music ? t.musicMaxW : t.collapsedMaxW) - 2 * t.mediaPadX;
-    float textX = t.artSmall + t.restGap, room = limit - textX - t.restGap - EqWidth();
+    float artX = slotInMusic ? slotX : 0, textX = artX + t.artSmall + t.restGap, room = limit - textX - t.restGap - EqWidth();
+    if (slotInMusic) statusIcon->visual.Offset({std::round((t.statusSlotW - statusIcon->Width()) / 2), std::round((t.artSmall - statusIcon->Height()) / 2), 0});
     peekTitle->SetMaxWidth(room);
     float px = textX + peekTitle->Width(), artistRoom = room - peekTitle->Width() - t.restGap, ph = t.artSmall;
     bool artist = row == MediaRow::Peek && !media.artist.empty() && artistRoom >= 24;
     peekArtist->visual.IsVisible(artist);
-    if (music) artSmall->visual.Offset({0, 0, 0});
+    if (music) artSmall->visual.Offset({artX, 0, 0});
     peekTitle->visual.Offset({textX, std::round((ph - peekTitle->Height()) / 2), 0});
     if (artist) {
         peekArtist->SetMaxWidth(artistRoom);
@@ -323,8 +415,8 @@ static float CollapsedWidth() {
     switch (shownRow) {
     case MediaRow::Peek: return FitCollapsedWidth(peekRow.Size().x, t, t.mediaPadX);
     case MediaRow::Music: return std::min(FitCollapsedWidth(peekRow.Size().x, t, t.mediaPadX), t.musicMaxW);
-    case MediaRow::Tucked: return FitCollapsedWidth(restRow.Size().x, t, t.mediaPadX);
-    default: return FitCollapsedWidth(restRow.Size().x, t);
+    case MediaRow::Tucked: return FitCollapsedWidth(restRow.Size().x + dayExtra, t, t.mediaPadX);
+    default: return FitCollapsedWidth(restRow.Size().x + dayExtra, t);
     }
 }
 
@@ -338,17 +430,28 @@ static void SetAccessibleName() {
     else swprintf(name, 200, L"Statlet, %s, CPU %d%%%s, memory %d%%%s", restLine, int(cpuPct), level(cpuPct), int(ramPct), level(ramPct));
     std::wstring full = name;
     if (mediaShown) full += (media.playing ? L", now playing " : L", paused ") + media.title + (media.artist.empty() ? L"" : L" by " + media.artist);
+    wchar_t g = StatusGlyph();  // each status has its own shape and its own words
+    if (g == t.glyphDownload) full += L", downloading";
+    else if (g == t.glyphDone) full += L", download finished";
+    else if (g == t.glyphBluetooth) full += L", Bluetooth device connected";
+    else if (g == t.glyphCamera) full += L", screenshot taken";
     SetWindowTextW(hwnd, full.c_str());
 }
 
-static bool restTimers;  // the clock and usage timers run (UpdateTimers)
 static void UpdateTimers();
+
+static bool ClockRunning();
 
 static void UpdateClock() {
     wchar_t text[64];
     GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, nullptr, nullptr, text, 64);
-    wchar_t date[32];
-    GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, nullptr, L"MMM d", date, 32, nullptr);
+    std::wstring date = RestDate(nullptr, t.showWeekday);
+    if (t.showWeekday && !focus.Running() && RowFor(mediaShown, peeking, t.afterPeek) == MediaRow::Tucked) {
+        // Music (with the status slot when it shows) and the widest date together must stay under the width cap; if they would
+        // not, the date shrinks to the weekday for this row instead of clipping.
+        measureText->Set(date + L"  " + widestTime);
+        if (TuckedRowTooWide(t, StatusGlyph() != 0, measureText->Width())) date = ShortDay(nullptr);
+    }
     wchar_t line[96];
     if (focus.Running()) {  // the date steps aside for the countdown
         wchar_t label[32];
@@ -356,12 +459,18 @@ static void UpdateClock() {
         focusText->Set(label);
         clockText->Set(text);
         swprintf(line, 96, L"%s  %s", label, text);
-    } else if (RowFor(mediaShown, peeking, t.afterPeek) == MediaRow::Tucked) {  // the art and equalizer take the date's room
+    } else if (RowFor(mediaShown, peeking, t.afterPeek) == MediaRow::Tucked && !t.showWeekday) {  // the art and equalizer take the date's room
         swprintf(line, 96, L"%s", text);
         clockText->Set(line);
     } else {
-        swprintf(line, 96, L"%s  %s", date, text);
+        swprintf(line, 96, L"%s  %s", date.c_str(), text);
         clockText->Set(line);
+    }
+    // Day-fitted pill: sized to the day's widest time, so the width changes at midnight and never during the day.
+    dayExtra = 0;
+    if (t.showWeekday && !focus.Running()) {
+        measureText->Set(date + L"  " + widestTime);
+        dayExtra = std::max(0.f, measureText->Width() - clockText->Width());
     }
     wcscpy_s(restLine, line);
     LayoutCollapsed();
@@ -369,7 +478,7 @@ static void UpdateClock() {
     SetAccessibleName();
     SYSTEMTIME now;
     GetLocalTime(&now);
-    if (restTimers) SetTimer(hwnd, TimerClock, (60 - now.wSecond) * 1000 - now.wMilliseconds + 20, nullptr);
+    if (ClockRunning()) SetTimer(hwnd, TimerClock, (60 - now.wSecond) * 1000 - now.wMilliseconds + 20, nullptr);
 }
 
 // One hovered row: past warnAt a warning mark leads the label, so the level reads without color; critical also colors the value.
@@ -433,6 +542,22 @@ static void SampleStats() {
 
 static void UpdateTrayIcon();
 
+// The music card's colour: the Windows accent, or the album art's dominant colour (lifted to read on dark glass).
+static Rgba MediaColor() { return t.artAccent && haveArt ? LiftForGlass(artColor) : accent; }
+
+// Applies MediaColor() to everything on the music card that uses it (equalizer, bar, stop dot, play button, wave, gradient).
+static void SetMediaColor() {
+    Rgba c = MediaColor();
+    if (mediaAccent.Color() == ToColor(c)) return;
+    mediaAccent.Color(ToColor(c));
+    if (gradientEnd) {
+        gradientEnd.Color(ToColor(c));
+        Rgba dim = GradientStart(c);
+        gradientStart.Color(ToColor(dim));
+    }
+    DrawWave();
+}
+
 // Accent and material follow Windows settings: the accent color, transparency effects and battery saver.
 static void ApplySettings() {
     accent = t.accentFallback;
@@ -444,10 +569,8 @@ static void ApplySettings() {
     UpdateTrayIcon();
     if (!showingCard) icon->SetColor(accent);
     focusText->SetColor(accent);
-    if (mediaAccent.Color() != ToColor(accent)) {
-        mediaAccent.Color(ToColor(accent));
-        DrawWave();
-    }
+    statusIcon->SetColor(accent);
+    SetMediaColor();
     if (cpuPct >= 0) ShowStats();
     else {
         cpuBar->SetFill(accent);
@@ -643,6 +766,7 @@ static float ProgressW() { return t.expandedW - 2 * t.padX - 2 * 44; }  // betwe
 // shortcut: the amplitude stays full near 0% and 100% (no taper into the start and the stop dot); taper it with a
 // second, flat-ended surface if the curl at the very start reads as a glitch.
 static void DrawWave() {
+    Rgba mc = MediaColor();
     float w = ProgressW() + t.waveLength, h = 12, cy = h / 2;
     gfx->Draw(waveSurface, UINT(std::ceil(w * gfx->scale)), UINT(std::ceil(h * gfx->scale)), [&](ID2D1DeviceContext* ctx) {
         winrt::com_ptr<ID2D1PathGeometry> path;
@@ -658,14 +782,14 @@ static void DrawWave() {
         winrt::check_hresult(gfx->d2dFactory->CreateStrokeStyle(
             {D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND, 10, D2D1_DASH_STYLE_SOLID, 0}, nullptr, 0, round.put()));
         winrt::com_ptr<ID2D1SolidColorBrush> brush;
-        winrt::check_hresult(ctx->CreateSolidColorBrush({accent.r / 255.f, accent.g / 255.f, accent.b / 255.f, 1}, brush.put()));
+        winrt::check_hresult(ctx->CreateSolidColorBrush({mc.r / 255.f, mc.g / 255.f, mc.b / 255.f, 1}, brush.put()));
         ctx->DrawGeometry(path.get(), brush.get(), t.waveStroke, round.get());
     });
 }
 
 // Builds the music row (in the collapsed face), the equalizer and the media card (in the open face).
 static void BuildMedia() {
-    mediaAccent = compositor.CreateColorBrush(ToColor(accent));
+    mediaAccent = compositor.CreateColorBrush(ToColor(MediaColor()));
     artSmall = std::make_unique<Picture>(*gfx, t.artSmall, t.artSmallR, t.buttonFill);
     artLarge = std::make_unique<Picture>(*gfx, t.artLarge, t.artLargeR, t.buttonFill);
 
@@ -702,6 +826,10 @@ static void BuildMedia() {
         mediaFace.Children().InsertAtTop(v);
 
     // Progress bar: the played part (wave or flat line) is clipped to P; the track starts a gap after it and ends at a stop dot.
+    // Segmented swaps all that for rows of ticks and Hairline thins the line; everything stays inside the same 12 epx slot.
+    using PS = Tokens::ProgressStyle;
+    bool seg = t.progressStyle == PS::Segmented, hair = t.progressStyle == PS::Hairline, grad = t.progressStyle == PS::Gradient;
+    float th = hair ? t.hairH : t.waveStroke;
     float barW = ProgressW(), barY = t.artLarge + 12;
     mediaProps = compositor.CreatePropertySet();
     mediaProps.InsertScalar(L"P", 0);
@@ -711,9 +839,14 @@ static void BuildMedia() {
     auto played = compositor.CreateContainerVisual();
     played.Size({barW, 12});
     auto clip = compositor.CreateInsetClip();
-    auto inset = compositor.CreateExpressionAnimation(L"w * (1 - m.P)");
+    // Segmented shows whole ticks only: Floor(P * n) of them, the last one without its trailing gap.
+    float segU = (barW + t.segGap) / t.segCount;
+    auto inset = compositor.CreateExpressionAnimation(seg ? L"Min(w - Floor(m.P * n) * u + g, w)" : L"w * (1 - m.P)");
     inset.SetReferenceParameter(L"m", mediaProps);
     inset.SetScalarParameter(L"w", barW);
+    inset.SetScalarParameter(L"n", float(t.segCount));
+    inset.SetScalarParameter(L"u", segU);
+    inset.SetScalarParameter(L"g", t.segGap);
     clip.StartAnimation(L"RightInset", inset);
     played.Clip(clip);
     waveSprite = compositor.CreateSpriteVisual();
@@ -726,45 +859,105 @@ static void BuildMedia() {
     flatFill = compositor.CreateShapeVisual();
     flatFill.Size({barW, 12});
     auto flatGeometry = compositor.CreateRoundedRectangleGeometry();
-    flatGeometry.Size({barW, t.waveStroke});
-    flatGeometry.Offset({0, 6 - t.waveStroke / 2});
-    flatGeometry.CornerRadius({t.waveStroke / 2, t.waveStroke / 2});
+    flatGeometry.Size({barW, th});
+    flatGeometry.Offset({0, 6 - th / 2});
+    flatGeometry.CornerRadius({th / 2, th / 2});
     auto flatShape = compositor.CreateSpriteShape(flatGeometry);
-    flatShape.FillBrush(mediaAccent);
+    gradientEnd = nullptr;
+    if (grad) {  // a ramp from a dim start to the media colour, spanning only the played part (EndPoint follows P)
+        auto ramp = compositor.CreateLinearGradientBrush();
+        ramp.MappingMode(wuc::CompositionMappingMode::Absolute);  // the default, Relative, would read EndPoint as a multiple of the bar width
+        ramp.StartPoint({0, 0});
+        auto end = compositor.CreateExpressionAnimation(L"Vector2(Max(w * m.P, 1), 0)");
+        end.SetReferenceParameter(L"m", mediaProps);
+        end.SetScalarParameter(L"w", barW);
+        ramp.StartAnimation(L"EndPoint", end);
+        Rgba mc = MediaColor(), dim = GradientStart(mc);
+        gradientStart = compositor.CreateColorGradientStop(0, ToColor(dim));
+        ramp.ColorStops().Append(gradientStart);
+        gradientEnd = compositor.CreateColorGradientStop(1, ToColor(mc));
+        ramp.ColorStops().Append(gradientEnd);
+        flatShape.FillBrush(ramp);
+    } else flatShape.FillBrush(mediaAccent);
     flatFill.Shapes().Append(flatShape);
-    bool wave = t.progressStyle == Tokens::ProgressStyle::Wave;
+    bool wave = t.progressStyle == PS::Wave;
     waveSprite.Opacity(wave ? 1.f : 0.f);
-    flatFill.Opacity(wave ? 0.f : 1.f);
+    flatFill.Opacity(wave || seg ? 0.f : 1.f);
     waveShowing = wave;
+    auto tickRow = [&](wuc::CompositionBrush brush) {
+        auto row = compositor.CreateShapeVisual();
+        row.Size({barW, 12});
+        for (int i = 0; i < t.segCount; i++) {
+            auto tick = compositor.CreateRoundedRectangleGeometry();
+            tick.Size({segU - t.segGap, t.segH});
+            tick.Offset({i * segU, 6 - t.segH / 2});
+            tick.CornerRadius({1, 1});
+            auto tickShape = compositor.CreateSpriteShape(tick);
+            tickShape.FillBrush(brush);
+            row.Shapes().Append(tickShape);
+        }
+        return row;
+    };
+    if (seg) played.Children().InsertAtTop(tickRow(mediaAccent));
     played.Children().InsertAtTop(flatFill);
     played.Children().InsertAtTop(waveSprite);
     auto rest = compositor.CreateShapeVisual();
     rest.Size({barW, 12});
     auto track = compositor.CreateRoundedRectangleGeometry();
-    track.CornerRadius({t.waveStroke / 2, t.waveStroke / 2});
+    track.CornerRadius({th / 2, th / 2});
     auto trackOffset = compositor.CreateExpressionAnimation(L"Vector2(Min(w * m.P + g, w), y)");
     auto trackSize = compositor.CreateExpressionAnimation(L"Vector2(Max(w * (1 - m.P) - g - d, 0), s)");
     for (auto a : {trackOffset, trackSize}) {
         a.SetReferenceParameter(L"m", mediaProps);
         a.SetScalarParameter(L"w", barW);
         a.SetScalarParameter(L"g", t.waveGap);
-        a.SetScalarParameter(L"d", t.waveStroke + t.waveGap);  // room for the stop dot
-        a.SetScalarParameter(L"y", 6 - t.waveStroke / 2);
-        a.SetScalarParameter(L"s", t.waveStroke);
+        a.SetScalarParameter(L"d", th + t.waveGap);  // room for the stop dot
+        a.SetScalarParameter(L"y", 6 - th / 2);
+        a.SetScalarParameter(L"s", th);
     }
     track.StartAnimation(L"Offset", trackOffset);
     track.StartAnimation(L"Size", trackSize);
     auto trackShape = compositor.CreateSpriteShape(track);
     trackShape.FillBrush(compositor.CreateColorBrush(ToColor(t.track)));
     auto dot = compositor.CreateEllipseGeometry();
-    dot.Center({barW - t.waveStroke / 2, 6});
-    dot.Radius({t.waveStroke / 2, t.waveStroke / 2});
+    dot.Center({barW - th / 2, 6});
+    dot.Radius({th / 2, th / 2});
     auto dotShape = compositor.CreateSpriteShape(dot);
     dotShape.FillBrush(mediaAccent);
-    rest.Shapes().Append(trackShape);
-    rest.Shapes().Append(dotShape);
+    if (!seg) rest.Shapes().Append(trackShape);
+    if (!seg && !hair) rest.Shapes().Append(dotShape);  // a hairline ends without a dot
+    if (seg) progress.Children().InsertAtTop(tickRow(compositor.CreateColorBrush(ToColor(t.track))));
     progress.Children().InsertAtTop(rest);
     progress.Children().InsertAtTop(played);
+    knobVisual = nullptr;
+    if (t.knob != Tokens::Knob::Never) {  // a dot, or a thin tick on the hairline and segmented bars; it rides P
+        float half = hair || seg ? 1.f : t.knobR;
+        knobVisual = compositor.CreateShapeVisual();
+        knobVisual.Size({2 * half, 12});
+        auto knobShape = [&]() -> wuc::CompositionSpriteShape {
+            if (hair || seg) {
+                auto pip = compositor.CreateRoundedRectangleGeometry();
+                pip.Size({2, 8});
+                pip.Offset({0, 2});
+                pip.CornerRadius({1, 1});
+                return compositor.CreateSpriteShape(pip);
+            }
+            auto ball = compositor.CreateEllipseGeometry();
+            ball.Center({half, 6});
+            ball.Radius({half, half});
+            return compositor.CreateSpriteShape(ball);
+        }();
+        knobShape.FillBrush(compositor.CreateColorBrush(ToColor(t.ink)));
+        knobVisual.Shapes().Append(knobShape);
+        auto ride = compositor.CreateExpressionAnimation(L"w * m.P - h");
+        ride.SetReferenceParameter(L"m", mediaProps);
+        ride.SetScalarParameter(L"w", barW);
+        ride.SetScalarParameter(L"h", half);
+        knobVisual.StartAnimation(L"Offset.X", ride);
+        knobVisual.Opacity(t.knob == Tokens::Knob::Always ? 1.f : 0.f);
+        knobHot = false;
+        progress.Children().InsertAtTop(knobVisual);
+    }
     mediaFace.Children().InsertAtTop(progress);
 
     // Transport: round buttons centered under the bar; play/pause is accent-filled.
@@ -822,7 +1015,7 @@ static void UpdateTimes() {
     if (!known) return;
     double pos = MediaPosition();
     elapsedText->Set(FormatTime(pos));
-    remainingText->Set(L"-" + FormatTime(media.duration - pos));
+    remainingText->Set(RightTime(media.duration, pos, t.timeTotal));
     float innerW = t.expandedW - 2 * t.padX, y = t.artLarge + 12 + std::round((12 - elapsedText->Height()) / 2);
     elapsedText->visual.Offset({0, y, 0});
     remainingText->visual.Offset({innerW - remainingText->Width(), y, 0});
@@ -847,6 +1040,22 @@ static void SyncProgress() {
     else KillTimer(hwnd, TimerMediaClock);
 }
 
+// Hover mode: the playhead dot fades in while the cursor is near the bar (6 epx slop) and out when it leaves or the card closes.
+static void SetKnobHot(bool hot) {
+    if (hot == knobHot || !knobVisual || t.knob != Tokens::Knob::Hover) return;
+    knobHot = hot;
+    auto fade = compositor.CreateScalarKeyFrameAnimation();
+    fade.InsertKeyFrame(1, hot ? 1.f : 0.f);
+    fade.Duration(std::chrono::milliseconds(AnimationsEnabled() ? 120 : 1));
+    knobVisual.StartAnimation(L"Opacity", fade);
+}
+
+// x, y: cursor in epx in the window
+static void UpdateKnobHover(double x, double y) {
+    double fx = x - ((hostW - springW.value) / 2 + t.padX), fy = y - (t.topOffset + t.padY), barY = t.artLarge + 12;
+    SetKnobHot(open && ShowingMedia() && fx >= 44 - 6 && fx <= 44 + ProgressW() + 6 && fy >= barY - 6 && fy <= barY + 12 + 6);
+}
+
 // Loops run only where they are seen: the equalizer while collapsed with music showing, the wave's drift while the card shows.
 static void UpdateMediaMotion() {
     bool anim = AnimationsEnabled(), playing = mediaShown && media.playing;
@@ -869,10 +1078,12 @@ static void UpdateMediaMotion() {
             eqBars[i].StartAnimation(L"Scale.Y", bounce);
         }
     }
+    if (!open || !ShowingMedia()) SetKnobHot(false);
     bool wave = t.progressStyle == Tokens::ProgressStyle::Wave && media.playing;  // paused: the wave flattens into a line
+    bool seg = t.progressStyle == Tokens::ProgressStyle::Segmented;
     if (wave != waveShowing) {
         waveShowing = wave;
-        for (auto [v, on] : {std::pair{waveSprite.as<wuc::Visual>(), wave}, std::pair{flatFill.as<wuc::Visual>(), !wave}}) {
+        for (auto [v, on] : {std::pair{waveSprite.as<wuc::Visual>(), wave}, std::pair{flatFill.as<wuc::Visual>(), !wave && !seg}}) {
             auto fade = compositor.CreateScalarKeyFrameAnimation();
             fade.InsertKeyFrame(1, on ? 1.f : 0.f);
             fade.Duration(std::chrono::milliseconds(anim ? t.waveFlattenMs : 1));
@@ -941,11 +1152,15 @@ static void OnMedia(MediaInfo m) {
         mediaArtist->visual.Offset({textX, top + mediaTitle->Height() + 2, 0});
         artSmall->Set(nullptr);  // the plain tile until the new art arrives
         artLarge->Set(nullptr);
+        haveArt = false;  // the old track's colour must not outlive it: the accent shows until the new art arrives
+        SetMediaColor();
         int request = ++artRequest;
         ReadArt([request](winrt::com_ptr<IWICBitmapSource> art) {
             if (request != artRequest) return;
             artSmall->Set(art);
             artLarge->Set(art);
+            haveArt = ArtColor(art.get(), artColor);  // once per track
+            SetMediaColor();
         });
     }
     if (media.playing) {
@@ -972,6 +1187,18 @@ static bool ClickTransport(double x, double y) {
         return true;
     }
     return false;
+}
+
+// A click on the right-hand time flips time left / track length and remembers it in state.json. x, y: epx in the window.
+static void SaveState();
+static bool ClickTime(double x, double y) {
+    if (!open || !ShowingMedia() || media.duration <= 0) return false;
+    double innerW = t.expandedW - 2 * t.padX, fx = x - ((hostW - springW.value) / 2 + t.padX), fy = y - (t.topOffset + t.padY), barY = t.artLarge + 12;
+    if (fx < innerW - 44 || fx > innerW + 4 || fy < barY - 6 || fy > barY + 12 + 6) return false;
+    t.timeTotal = !t.timeTotal;
+    UpdateTimes();
+    SaveState();
+    return true;
 }
 
 static void OnVolume(int percent, bool muted) {
@@ -1014,6 +1241,7 @@ static void ToggleFocus() {
 static void FinishFocus() {
     KillTimer(hwnd, TimerFocusEnd);
     focus.Stop();
+    PlayEventSound(Event::FocusDone);
     UpdateClock();
     Take(FocusCard(true, t.focusMinutes, accent, t));
 }
@@ -1029,6 +1257,8 @@ static void Demo(const char* what) {
         if (step < 2) SettleNet(step == 1);
     } else if (!strcmp(what, "focus")) {
         if (step == 0) ToggleFocus();
+    } else if (!strcmp(what, "bt")) {  // rehearses a device connecting, without the headphones
+        if (step == 0) PostMessageW(hwnd, WM_APP_BT, 0, 0);
     }
     if (++step >= 4) KillTimer(hwnd, TimerDemo);
 }
@@ -1171,25 +1401,163 @@ static void OnPower(WPARAM wp, LPARAM lp) {
 
 // Starts and stops the polls as the island becomes seen or unseen (rules in power.h). Coming back catches up at once;
 // display on and unlock also revalidate.
-static bool hoverTimer;
-static void UpdateTimers() {
-    Timers want = TimersFor(away != Away::No, away == Away::Hidden, displayOff, locked);
-    if (want.hover != hoverTimer) {
-        hoverTimer = want.hover;
-        if (want.hover) SetTimer(hwnd, TimerHover, t.hoverPollMs, nullptr);
-        else KillTimer(hwnd, TimerHover);
-    }
-    if (want.rest == restTimers) return;
-    restTimers = want.rest;
-    Log("timers %s", want.rest ? "on" : "off");
-    if (!want.rest) {
-        KillTimer(hwnd, TimerStats);
-        KillTimer(hwnd, TimerClock);
+static void StartHover() { SetTimer(hwnd, TimerHover, t.hoverPollMs, nullptr); }
+static void StopHover() { KillTimer(hwnd, TimerHover); }
+static void StartClock() { UpdateClock(); }  // re-arms the clock timer
+static void StopClock() { KillTimer(hwnd, TimerClock); }
+static void StartStats() {
+    SetTimer(hwnd, TimerStats, t.statsPollMs, nullptr);
+    SampleStats();
+}
+static void StopStats() { KillTimer(hwnd, TimerStats); }
+
+// --- Status slot and downloads (downloads.h, v2 items 7 and 11) ---
+
+static void SetStatus(wchar_t g) {  // the persistent glyph (0: none)
+    if (g == statusPersistent) return;
+    statusPersistent = g;
+    UpdateClock();  // lays the row out, re-sizes the pill and renames the window
+}
+// A peek takes the slot for ms: it fades in over 150 ms and out over 150 ms, and only then does the slot (and its width) go.
+// A newer peek replaces it. With Windows animations off it is steady and the slot goes at once. Items 6, 7 and 8 all use this.
+static bool peekFading;  // the fade-out is running: the next timer tick ends the peek
+static void PeekStatus(wchar_t g, int ms) {
+    if (peekFading) slotShown = 0;  // a peek that was fading out starts over (fades in again)
+    peekFading = false;
+    statusPeek = g;
+    SetTimer(hwnd, TimerStatusPeek, ms, nullptr);
+    UpdateClock();
+}
+static void EndStatusPeek() {
+    KillTimer(hwnd, TimerStatusPeek);
+    if (!peekFading && statusPeek && slotShown == statusPeek && AnimationsEnabled()) {
+        auto fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(1, 0);  // from wherever the opacity is now
+        fade.Duration(std::chrono::milliseconds(150));
+        statusIcon->visual.StartAnimation(L"Opacity", fade);
+        peekFading = true;
+        SetTimer(hwnd, TimerStatusPeek, 150, nullptr);
         return;
     }
-    SetTimer(hwnd, TimerStats, t.statsPollMs, nullptr);
-    UpdateClock();  // re-arms the clock timer
-    SampleStats();
+    peekFading = false;
+    statusPeek = 0;
+    UpdateClock();
+}
+
+static DownloadTracker downloads;
+static std::wstring downloadsDir;
+static HANDLE downloadChange = INVALID_HANDLE_VALUE;  // folder change notification, waited on by the message loop
+
+static std::wstring DownloadsDir() {
+    wchar_t env[MAX_PATH];
+    DWORD n = GetEnvironmentVariableW(L"STATLET_DOWNLOADS_DIR", env, MAX_PATH);  // tests point this at a temp folder
+    if (n > 0 && n < MAX_PATH) return env;
+    PWSTR known = nullptr;
+    std::wstring dir;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &known))) dir = known;
+    CoTaskMemFree(known);
+    return dir;
+}
+
+static ULONGLONG newestFinishedAgeMs = ~0ull;  // how long ago the newest non-partial file in the folder was written (set by ScanDownloads)
+
+// The folder root's partial files with their sizes. The directory entry's size lags a file being written, so ask the file.
+static std::vector<PartialFile> ScanDownloads() {
+    std::vector<PartialFile> out;
+    WIN32_FIND_DATAW fd;
+    HANDLE find = FindFirstFileExW((downloadsDir + L"\\*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+    if (find == INVALID_HANDLE_VALUE) return out;
+    FILETIME nowFt;
+    GetSystemTimeAsFileTime(&nowFt);
+    ULONGLONG nowTicks = (ULONGLONG(nowFt.dwHighDateTime) << 32) | nowFt.dwLowDateTime;
+    newestFinishedAgeMs = ~0ull;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (!IsPartialName(fd.cFileName)) {  // a browser may rename "Unconfirmed 123.crdownload" to the real name: note the newest finished file
+            ULONGLONG written = (ULONGLONG(fd.ftLastWriteTime.dwHighDateTime) << 32) | fd.ftLastWriteTime.dwLowDateTime;
+            if (nowTicks >= written) newestFinishedAgeMs = std::min(newestFinishedAgeMs, (nowTicks - written) / 10000);
+            continue;
+        }
+        PartialFile p{fd.cFileName, (std::uint64_t(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow};
+        HANDLE f = CreateFileW((downloadsDir + L"\\" + fd.cFileName).c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+        LARGE_INTEGER size;
+        if (f != INVALID_HANDLE_VALUE) {
+            if (GetFileSizeEx(f, &size)) p.size = std::uint64_t(size.QuadPart);
+            CloseHandle(f);
+        }
+        out.push_back(std::move(p));
+    } while (FindNextFileW(find, &fd));
+    FindClose(find);
+    return out;
+}
+
+// Looks at the folder, moves the tracker, shows the result, and keeps the 1 Hz timer running only while a download is.
+static void ScanDownloadsNow() {
+    ULONGLONG now = GetTickCount64();
+    auto before = downloads.state;
+    auto partials = ScanDownloads();
+    // Finished: the file the partial turns into is there, or (Chromium's "Unconfirmed NNN" names) some file was just written.
+    auto after = downloads.Observe(now, partials, [](const std::wstring& stem) {
+        return GetFileAttributesW((downloadsDir + L"\\" + stem).c_str()) != INVALID_FILE_ATTRIBUTES || newestFinishedAgeMs < 15000;
+    });
+    if (after != before) {
+        Log("downloads %s", after == DownloadTracker::State::Active ? "active" : after == DownloadTracker::State::Done ? "done" : "idle");
+        if (after == DownloadTracker::State::Active) SetStatus(t.glyphDownload);
+        else {
+            SetStatus(0);
+            if (after == DownloadTracker::State::Done) {
+                PeekStatus(t.glyphDone, t.peekDoneMs);
+                PlayEventSound(Event::DownloadDone);
+            }
+        }
+    }
+    if (downloads.Busy(now)) SetTimer(hwnd, TimerDownload, 1000, nullptr);
+    else KillTimer(hwnd, TimerDownload);
+}
+
+static void StartDownloads() {
+    downloadsDir = DownloadsDir();
+    if (downloadsDir.empty()) return;
+    downloadChange = FindFirstChangeNotificationW(downloadsDir.c_str(), FALSE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
+    downloads.Seed(GetTickCount64(), ScanDownloads());
+    if (downloadChange == INVALID_HANDLE_VALUE) Log("downloads folder cannot be watched (error %lu): the icon will not show", GetLastError());  // missing folder or offline drive
+    else Log("downloads watching");
+    ScanDownloadsNow();
+}
+static void StopDownloads() {
+    if (downloadChange != INVALID_HANDLE_VALUE) FindCloseChangeNotification(downloadChange);
+    downloadChange = INVALID_HANDLE_VALUE;
+    KillTimer(hwnd, TimerDownload);
+    downloads = DownloadTracker{};
+    SetStatus(0);
+}
+static void OnDownloadChange() {  // while a download runs the 1 Hz timer does the looking; this catches a download starting
+    FindNextChangeNotification(downloadChange);
+    if (!downloads.Busy(GetTickCount64())) ScanDownloadsNow();
+}
+static bool WantDownloads(const WidgetState& s) { return Seen(s) && t.downloadIcon && !getenv("ISLAND_BENCH"); }
+static void StartBluetooth() {
+    WatchBluetooth(hwnd, WM_APP_BT);
+    Log("bluetooth watching");
+}
+static bool WantBluetooth(const WidgetState& s) { return Seen(s) && t.btIcon && !getenv("ISLAND_BENCH"); }
+
+// The polled widgets (widgets.h). Event-driven sources (volume, network, media, battery) cost nothing while idle.
+static std::array<Widget, 5> widgets{{
+    {"hover", WantHover, StartHover, StopHover},
+    {"clock", WantRest, StartClock, StopClock},
+    {"stats", WantRest, StartStats, StopStats},
+    {"downloads", WantDownloads, StartDownloads, StopDownloads},
+    {"bluetooth", WantBluetooth, StartBluetooth, StopBluetooth},
+}};
+static Widget& clockWidget = widgets[1];
+static bool ClockRunning() { return clockWidget.running; }
+
+static void UpdateTimers() {
+    WidgetState s{away != Away::No, away == Away::Hidden, displayOff, locked};
+    bool wasRest = clockWidget.running;
+    Reconcile(widgets, s);
+    if (clockWidget.running != wasRest) Log("timers %s", clockWidget.running ? "on" : "off");
 }
 
 static void CALLBACK OnWinEvent(HWINEVENTHOOK, DWORD event, HWND w, LONG idObject, LONG idChild, DWORD, DWORD) {
@@ -1211,6 +1579,7 @@ static void PollCursor() {
     double x = (p.x - wr.left) / scale, y = (p.y - wr.top) / scale, w = springW.value, h = springH.value;
     bool over = InRoundedRect(x, y, (hostW - w) / 2, t.topOffset, w, h, IslandRadius(t, h));
     SetClickThrough(!over);
+    UpdateKnobHover(x, y);
     if (over != hovering) {
         hovering = over;
         Retarget();
@@ -1223,9 +1592,10 @@ static wuc::Desktop::DesktopWindowTarget target{nullptr};
 static std::wstring settingsDir;  // DataDir(): STATLET_DATA_DIR or %LOCALAPPDATA%\Statlet
 static std::string settingsJson;  // the file's text as last applied
 
-static std::string ReadSettingsFile() {
+static std::string ReadDataFile(const wchar_t* name) {
     std::string text;
-    if (FILE* f = _wfopen((settingsDir + L"\\settings.json").c_str(), L"rb")) {
+    if (settingsDir.empty()) return text;  // benchmarks run without a data folder
+    if (FILE* f = _wfopen((settingsDir + L"\\" + name).c_str(), L"rb")) {
         char buf[4096];
         for (size_t n; (n = fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
         fclose(f);
@@ -1233,10 +1603,17 @@ static std::string ReadSettingsFile() {
     return text;
 }
 
+static std::string ReadSettingsFile() { return ReadDataFile(L"settings.json"); }
+
+static void SaveState() {
+    if (!WriteState(settingsDir, t.timeTotal)) Log("state.json write failed (error %lu); the time toggle will not survive a restart", GetLastError());
+}
+
 // The file over the defaults; environment overrides (tests, benchmarks) win.
 static void LoadTokens(const std::string& json) {
     t = Tokens{};
     LoadSettings(t, json);
+    LoadState(t, ReadDataFile(L"state.json"));
     if (const char* top = getenv("STATLET_TOP_OFFSET")) t.topOffset = float(atof(top));
     hostW = t.maxOpenW + 2 * t.shadowBlur + 8;
     hostH = t.topOffset + t.maxOpenH + t.shadowY + t.shadowBlur + 4;
@@ -1299,6 +1676,7 @@ static void ReloadSettings() {
     if (away != Away::No) root.Offset({0, AwayOffset(), 0});  // the new root starts on screen, over the maximized window
     ApplySettings();
     UpdateClock();
+    UpdateTimers();  // a changed downloadIcon starts or stops that watcher
     modelTime = Now();
     trackKey.clear();  // refills the song's text and art; peekedKey stays, so it does not peek again
     if (mediaShown) ReadMedia(OnMedia);
@@ -1317,7 +1695,8 @@ static void OpenSettings() {
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring app = exe;
     app = app.substr(0, app.find_last_of(L'\\') + 1) + L"settings\\StatletSettings.exe";
-    ShellExecuteW(nullptr, L"open", app.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    HINSTANCE started = ShellExecuteW(nullptr, L"open", app.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(started) <= 32) Log("Settings did not start (%ls, code %d): is the settings folder beside statlet.exe?", app.c_str(), int(reinterpret_cast<INT_PTR>(started)));  // was silent
 }
 
 static bool trayAdded;
@@ -1382,11 +1761,36 @@ static void AddTrayIcon() {
     trayAdded = true;
 }
 
+// Screenshots (capture.h, v2 item 8): the menu has closed 150 ms after the click, so it is not in the picture.
+static int pendingShot;  // MenuCopyShot or MenuSaveShot
+static void StartShot(int kind) {
+    pendingShot = kind;
+    SetTimer(hwnd, TimerShot, 150, nullptr);
+}
+static void TakeShot() {
+    KillTimer(hwnd, TimerShot);
+    POINT at;
+    GetCursorPos(&at);
+    Shot shot;
+    std::wstring name;
+    bool save = pendingShot == MenuSaveShot;
+    bool ok = CaptureMonitorAt(hwnd, at, shot) && (save ? SaveShot(shot, name) : CopyShot(hwnd, shot));
+    if (!ok) {
+        Log("screenshot failed (error %lu)", GetLastError());  // no peek: a camera that did not fire must not look as if it did
+        return;
+    }
+    Log(save ? "screenshot saved %dx%d" : "screenshot copied %dx%d", shot.w, shot.h);
+    PeekStatus(t.glyphCamera, t.peekShotMs);
+    PlayEventSound(Event::Screenshot);
+}
+
 static void ShowTrayMenu() {
     HMENU menu = CreatePopupMenu();
     wchar_t start[48];
     swprintf(start, 48, L"Start focus timer (%d min)", t.focusMinutes);
     AppendMenuW(menu, MF_STRING, MenuFocus, focus.Running() ? L"Stop focus timer" : start);
+    AppendMenuW(menu, MF_STRING, MenuCopyShot, L"Copy screenshot");
+    AppendMenuW(menu, MF_STRING, MenuSaveShot, L"Save screenshot");
     AppendMenuW(menu, MF_STRING, MenuSettings, L"Settings");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, MenuQuit, L"Quit Statlet");
@@ -1396,6 +1800,7 @@ static void ShowTrayMenu() {
     UINT choice = UINT(TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, p.x, p.y, 0, hwnd, nullptr));
     if (choice == MenuQuit) DestroyWindow(hwnd);
     else if (choice == MenuFocus) ToggleFocus();
+    else if (choice == MenuCopyShot || choice == MenuSaveShot) StartShot(int(choice));
     else if (choice == MenuSettings) OpenSettings();
     DestroyMenu(menu);
 }
@@ -1418,7 +1823,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_LBUTTONDOWN:
         PollCursor();
-        if (hovering && !ClickTransport(GET_X_LPARAM(lp) / scale, GET_Y_LPARAM(lp) / scale)) {  // a click that beat the poll to a spot outside the shape is dropped
+        if (hovering && !ClickTransport(GET_X_LPARAM(lp) / scale, GET_Y_LPARAM(lp) / scale) && !ClickTime(GET_X_LPARAM(lp) / scale, GET_Y_LPARAM(lp) / scale)) {  // a click that beat the poll to a spot outside the shape is dropped
             pinned = !pinned;
             Retarget();
         }
@@ -1436,6 +1841,9 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (wp == TimerPeek) EndPeek();
         else if (wp == TimerMediaHide) HideMedia();
         else if (wp == TimerMediaClock) UpdateTimes();
+        else if (wp == TimerDownload) ScanDownloadsNow();
+        else if (wp == TimerStatusPeek) EndStatusPeek();
+        else if (wp == TimerShot) TakeShot();
         else if (wp == TimerReload) {
             KillTimer(h, TimerReload);
             ReloadSettings();
@@ -1459,6 +1867,10 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_SETTINGCHANGE:
         if (wp == SPI_SETWORKAREA) RevalidateSoon("work area");
+        if (lp && wcscmp(reinterpret_cast<const wchar_t*>(lp), L"intl") == 0) {  // a locale or 12/24-hour change: re-measure the widest time
+            MeasureWidestTime();
+            UpdateClock();
+        }
         return 0;
     case WM_WTSSESSION_CHANGE:
         Log("session change %u", unsigned(wp));  // 7 lock, 8 unlock, 1/2 console connect/disconnect, 3/4 remote
@@ -1471,6 +1883,15 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_APP_VOLUME:
         if (wp == UINT_MAX) RebindVolume();  // the default output device changed
         else OnVolume(int(wp), lp != 0);
+        return 0;
+    case WM_APP_BT:  // a paired device connected (bluetooth.cpp); the icon only, no name, no sound (Windows plays its own)
+        if (t.btIcon) {
+            Log("bluetooth connected");
+            PeekStatus(t.glyphBluetooth, t.peekBluetoothMs);
+        }
+        return 0;
+    case WM_APP_SHOT:  // the menu items' action without the menu (the tests post this); wParam is MenuCopyShot or MenuSaveShot
+        if (wp == MenuCopyShot || wp == MenuSaveShot) StartShot(int(wp));
         return 0;
     case WM_APP_MEDIA:
         if (wp) RebindMedia();  // a different player became current
@@ -1618,10 +2039,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     MSG msg;
     int recoverTries = 0;
     for (;;) {
-        HANDLE handles[2] = {gfx->deviceLost, settingsChanged};
-        DWORD count = settingsChanged != INVALID_HANDLE_VALUE ? 2 : 1;
+        HANDLE handles[3] = {gfx->deviceLost};  // then the settings folder and the Downloads folder, when they are watched
+        DWORD count = 1, settingsAt = 0, downloadsAt = 0;
+        if (settingsChanged != INVALID_HANDLE_VALUE) handles[settingsAt = count++] = settingsChanged;
+        if (downloadChange != INVALID_HANDLE_VALUE) handles[downloadsAt = count++] = downloadChange;
         DWORD wait = MsgWaitForMultipleObjectsEx(count, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-        if (wait == WAIT_OBJECT_0 + 1) {  // a save often arrives as several writes: reload once they settle
+        if (downloadsAt && wait == WAIT_OBJECT_0 + downloadsAt) OnDownloadChange();
+        if (settingsAt && wait == WAIT_OBJECT_0 + settingsAt) {  // a save often arrives as several writes: reload once they settle
             FindNextChangeNotification(settingsChanged);
             SetTimer(hwnd, TimerReload, 120, nullptr);
         }

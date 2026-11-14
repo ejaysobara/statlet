@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 
 // Every look value of the island, from the Island Design Spec (https://claude.ai/artifact/SSheiA7NfUQKoceC71focw).
@@ -48,6 +49,19 @@ struct Tokens {
     int statsPollMs = 2000;
     float restBarW = 26, restBarH = 4, restGap = 8;
 
+    // Status slot (v2 items 6-8, 11): one 16 epx slot on the rest line for a 14 epx Fluent glyph in the accent colour. Code
+    // points are Segoe Fluent Icons (Segoe MDL2 Assets on Windows 10 has the same ones).
+    static constexpr wchar_t glyphBluetooth = 0xE702, glyphDownload = 0xE896, glyphDone = 0xE73E, glyphCamera = 0xE722;
+    // Event sounds (item 9): Windows' own sounds through the user's scheme, one switch each. Bluetooth has none (Windows plays one).
+    bool soundScreenshot = true, soundDownloadDone = false, soundFocusDone = true;
+    // The rest line's three blocks, left to right (item 9); the album art and equalizer, when tucked in, frame the last two.
+    enum class RestBlock { Status, Clock, Usage };
+    std::array<RestBlock, 3> restOrder = {RestBlock::Status, RestBlock::Clock, RestBlock::Usage};
+    bool btIcon = true;       // peek the Bluetooth icon when a paired device connects (item 6)
+    bool downloadIcon = true;  // show the download icon while a file downloads into the Downloads folder (item 7)
+    float statusGlyph = 14, statusSlotW = 16;  // the slot adds statusSlotW + restGap to the width while it shows
+    int peekDoneMs = 2000, peekBluetoothMs = 3000, peekShotMs = 2000, breatheMs = 1600;  // peeks hand the slot back; breathing is the download loop
+
     // Takeover widgets: how long each card stays (ms), battery thresholds in percent, the wait before "offline" shows, and the Focus length
     int takeoverVolumeMs = 1500, takeoverBatteryMs = 3500, takeoverNetMs = 3000, takeoverFocusMs = 4000;
     int batteryLowAt = 20, batteryCritAt = 10, netLostDelayMs = 3000, focusMinutes = 25;
@@ -56,9 +70,14 @@ struct Tokens {
     // rest line shows afterPeek: Tuck = art and equalizer beside the clock, Clock = plain rest line, Music = art, title and
     // equalizer in place of the clock. A paused player stays mediaHideMs. These two choices are user settings.
     enum class AfterPeek { Tuck, Clock, Music };
-    enum class ProgressStyle { Wave, Line };
+    enum class ProgressStyle { Wave, Line, Segmented, Hairline, Gradient };
+    enum class Knob { Never, Hover, Always };  // the playhead dot on the progress bar
     AfterPeek afterPeek = AfterPeek::Tuck;
     ProgressStyle progressStyle = ProgressStyle::Wave;
+    Knob knob = Knob::Never;
+    bool artAccent = false;  // the music card takes the album art's dominant colour instead of the accent
+    bool timeTotal = false;  // the right-hand time shows the track length, not the time left (state.json, flipped by a click)
+    bool showWeekday = true; // the rest line starts with the weekday ("Thu Nov 13"); the pill is then sized to the day's widest time
     int mediaPeekMs = 4000, mediaHideMs = 30000;
     float mediaPadX = 7, musicMaxW = 210;                               // rest-line padding before the art; width cap for Music
     float artSmall = 22, artSmallR = 6, artLarge = 62, artLargeR = 14;  // album art, collapsed and open
@@ -68,6 +87,9 @@ struct Tokens {
     // wavelength per waveDriftMs while playing; it flattens when paused. The rest of the track is a flat line after a gap.
     float waveAmp = 3, waveLength = 32, waveStroke = 4, waveGap = 4;
     int waveDriftMs = 1600, waveFlattenMs = 240;
+    // Other bar styles, inside the same 12 epx slot: Segmented tick count, gap and height; Hairline thickness; playhead dot radius
+    int segCount = 24;
+    float segGap = 2, segH = 6, hairH = 1.5f, knobR = 4;
     float transportSize = 34, transportGap = 14;
     float mediaUsageW = 90;  // CPU and RAM either side of the transport: label, bar and value share this width
 

@@ -45,6 +45,31 @@ inline float FitCollapsedWidth(float content, const Tokens& t, float padX = -1) 
     return std::clamp(w, t.collapsedMinW, t.collapsedMaxW);
 }
 
+// The collapsed rest row's draw order for the chosen block order (item 9). With music tucked in, the art goes right before the
+// first block that is not the status icon and the equalizer right after the last such block, so they keep framing the date
+// and bars wherever the status icon sits.
+enum class RestItem { Status, Art, Clock, Usage, Equalizer };
+inline std::vector<RestItem> RestSequence(const std::array<Tokens::RestBlock, 3>& order, bool tucked) {
+    auto item = [](Tokens::RestBlock b) { return b == Tokens::RestBlock::Status ? RestItem::Status : b == Tokens::RestBlock::Clock ? RestItem::Clock : RestItem::Usage; };
+    std::vector<RestItem> out;
+    for (auto b : order) out.push_back(item(b));
+    if (!tucked) return out;
+    auto firstOther = std::find_if(out.begin(), out.end(), [](RestItem i) { return i != RestItem::Status; });
+    out.insert(firstOther, RestItem::Art);
+    auto lastOther = std::find_if(out.rbegin(), out.rend(), [](RestItem i) { return i != RestItem::Status && i != RestItem::Art; });
+    out.insert(lastOther.base(), RestItem::Equalizer);
+    return out;
+}
+
+// The tucked rest row is art, the status slot (when it shows), date and time, bars and equalizer. When it would pass the width
+// cap, the date shrinks to the weekday for that row instead of clipping (large text, a long-worded locale, the slot's 24 px).
+inline float TuckedFixedWidth(const Tokens& t, bool slot) {
+    return (slot ? t.statusSlotW + t.restGap : 0) + t.artSmall + t.restGap + t.restGap + t.restBarW + t.restGap + 4 * t.eqBarW + 3 * t.eqGap;
+}
+inline bool TuckedRowTooWide(const Tokens& t, bool slot, float dateTimeW) {
+    return std::ceil((TuckedFixedWidth(t, slot) + dateTimeW + 2 * t.mediaPadX) / t.widthStep) * t.widthStep > t.collapsedMaxW;
+}
+
 inline bool InRoundedRect(double x, double y, double left, double top, double w, double h, double r) {
     if (x < left || y < top || x >= left + w || y >= top + h) return false;
     r = std::min({r, w / 2, h / 2});

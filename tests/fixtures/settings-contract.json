@@ -1,0 +1,9 @@
+{
+  "showWeekday": false,
+  "btIcon": false,
+  "downloadIcon": false,
+  "soundScreenshot": false,
+  "soundDownloadDone": true,
+  "soundFocusDone": false,
+  "restOrder": "usage,status,clock"
+}

@@ -1,23 +1,54 @@
-## Statlet 1.0.0
+## Statlet 2.0.0
 
-A Dynamic Island-style floating status pill for Windows 11. Shows time, CPU and RAM; opens for volume, battery,
-network, a Focus timer and now-playing music; includes a settings app.
+A Dynamic Island-style floating status pill for Windows 11. It shows the time, CPU and RAM, and opens for volume, battery,
+network, a Focus timer and the music that is playing. Nothing is sent anywhere: Statlet makes no network calls.
 
-**New in 1.0.0**
-- A real installer (`Statlet-Setup-1.0.0.exe`): per-user, no administrator needed, updates in place and keeps your settings.
-- Starting Statlet again (Start menu) opens Settings instead of doing nothing.
-- Start with Windows is off by default, with a note in Settings and a one-time question the first time you close Settings.
-  Statlet also notices when Windows has switched it off in Startup Apps.
-- Settings > About: version, install date, and a Releases page button.
-- The settings app now runs on .NET 10.
+### What is new since 1.0.0
 
-**Install:** run the setup. Windows shows "Windows protected your PC" because the setup is unsigned: More info > Run anyway.
-Check the download with `Get-FileHash` against the SHA256 below.
+**Music card**
+- Five progress bar styles: Wavy (default), Solid, Segmented, Hairline and Gradient. Pick one in Settings > Now playing.
+- An optional playhead dot on the bar: never, on hover, or always.
+- Click the time on the right of the bar to switch between time left and the track length. Statlet remembers your choice.
+- Album art colour: the bar, equalizer and play button can take the cover's main colour. Or follow your Windows accent, or pick
+  any colour (white is new).
 
-**Updates:** Statlet never goes online. On GitHub choose Watch > Custom > Releases to be told about new versions.
+**Rest line**
+- The weekday beside the clock ("Thu Nov 13  5:56 AM"). The pill is sized to the day, so it never twitches during the day.
+  Turn it off with Show weekday.
+- A small status slot at the start of the rest line shows:
+  - a download icon while a file downloads into your Downloads folder, and a check when it finishes;
+  - a Bluetooth icon for 3 seconds when a paired Bluetooth device connects;
+  - a camera icon after a screenshot.
+- Choose the order of status, clock and usage in Settings > General > Rest line order.
 
-**Known limits:** Windows 11 x64 only. Unsigned. Tested on one laptop plus one external monitor.
+**Screenshots**
+- Right-click the tray icon > Copy screenshot or Save screenshot. It captures the monitor your cursor is on, without the pill.
+  Saved files go to Pictures\Screenshots as "Statlet <date> <time>.png".
 
-**Feedback:** open an issue. Attach `%LOCALAPPDATA%\Statlet\island.log` if something went wrong.
+**Sounds**
+- Optional Windows sounds for a screenshot, a finished download and a finished Focus timer, one switch each.
+  They use the sounds from your Windows sound scheme.
 
-SHA256 of `Statlet-Setup-1.0.0.exe`: d28fe566a1b384873b9647a8ab717f45e0181078ce33cfa7b74c239658ec3401
+**Under the hood**
+- Every polled source (usage, music, downloads, Bluetooth) starts only while it is wanted and stops when the screen is off
+  or locked, so the island stays cheap when idle.
+
+### Known limits
+
+- Windows 11 x64 only. The installer is unsigned: SmartScreen shows "More info" then "Run anyway".
+- Screenshots work only from the tray menu. They do not react to Snipping Tool or the Print Screen key yet.
+- Downloads are seen in the root of your Downloads folder only ("ask where to save" downloads are not seen). Stalled downloads
+  (no growth for 60 seconds) are ignored.
+- Bluetooth shows connect events of paired devices only (no disconnect, no battery, no device name).
+- Tested on one laptop with one external monitor.
+
+### Install, upgrade, uninstall
+
+- Per-user install to %LOCALAPPDATA%\Programs\Statlet, no admin prompt. Installing over 1.x keeps your settings.
+- Start with Windows is off by default; tick it in the installer or in Settings.
+- Uninstall removes the program and also deletes %LOCALAPPDATA%\Statlet (your settings and the log).
+- Updates: watch the repository's Releases (GitHub Watch > Custom > Releases), or use Settings > About > Releases page.
+
+**Feedback:** open an issue. Attach %LOCALAPPDATA%\Statlet\island.log if something went wrong.
+
+SHA256 of `Statlet-Setup-2.0.0.exe`: `92a88130af83c21b09e6f7a352111edb02ec64cf5695068860157800bd49138e`

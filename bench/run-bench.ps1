@@ -41,6 +41,9 @@ function Launch($exe, $mode, $out) {
         # Outlasts the 2 s warm-up, the measured window and Get-Counter's own start-up; the harness kills it after.
         $psi.EnvironmentVariables['ISLAND_BENCH_SECONDS'] = [string]($CycleSeconds + 15)
     }
+    # A plain launch beside the live island would hit its single-instance lock: run as a separate test instance.
+    $psi.EnvironmentVariables['STATLET_INSTANCE'] = $(if ($env:STATLET_BENCH_INSTANCE) { $env:STATLET_BENCH_INSTANCE } else { 'bench' })
+    $psi.EnvironmentVariables['STATLET_DATA_DIR'] = Join-Path $env:TEMP $(if ($env:STATLET_BENCH_INSTANCE) { 'statlet-' + $env:STATLET_BENCH_INSTANCE } else { 'statlet-bench-data' })
     [System.Diagnostics.Process]::Start($psi)
 }
 

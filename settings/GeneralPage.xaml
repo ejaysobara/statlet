@@ -78,6 +78,88 @@
                           AutomationProperties.Name="Open the island when usage stays high" />
         </Grid>
 
+        <TextBlock Text="Rest line" Style="{StaticResource Section}" />
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE787;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Show weekday" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Thu Nov 13 beside the time" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.ShowWeekday, Mode=TwoWay}"
+                          AutomationProperties.Name="Show weekday" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE702;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Bluetooth icon" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="A Bluetooth icon shows for 3 seconds when a paired device connects" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.BtIcon, Mode=TwoWay}"
+                          AutomationProperties.Name="Bluetooth icon" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE896;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Download icon" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="A download icon shows while a file downloads into your Downloads folder" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.DownloadIcon, Mode=TwoWay}"
+                          AutomationProperties.Name="Download icon" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE8CB;" VerticalAlignment="Top" Margin="0,4,0,0" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Order" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Drag a row, or select it and use the buttons. Music keeps framing the date and bars." Style="{StaticResource RowDesc}" />
+                <ListView x:Name="OrderList" SelectionMode="Single" CanReorderItems="True" AllowDrop="True" Margin="0,8,0,0" Width="260" HorizontalAlignment="Left"
+                          DragItemsCompleted="OnOrderDragged" SelectionChanged="OnOrderSelected" AutomationProperties.Name="Rest line order" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center">
+                <Button x:Name="OrderUp" Click="OnOrderUp" IsEnabled="False" AutomationProperties.Name="Move up">
+                    <FontIcon Glyph="&#xE70E;" FontSize="14" />
+                </Button>
+                <Button x:Name="OrderDown" Click="OnOrderDown" IsEnabled="False" AutomationProperties.Name="Move down">
+                    <FontIcon Glyph="&#xE70D;" FontSize="14" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="Sounds" Style="{StaticResource Section}" />
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE722;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Screenshot taken" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Plays your Windows notification sound" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.SoundScreenshot, Mode=TwoWay}"
+                          AutomationProperties.Name="Sound when a screenshot is taken" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE73E;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Download finished" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Plays your Windows notification sound" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.SoundDownloadDone, Mode=TwoWay}"
+                          AutomationProperties.Name="Sound when a download finishes" />
+        </Grid>
+        <Grid Style="{StaticResource Row}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE916;" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Focus timer finished" Style="{StaticResource RowTitle}" />
+                <TextBlock Text="Plays your Windows reminder sound" Style="{StaticResource RowDesc}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="2" OnContent="On" OffContent="Off" MinWidth="0" IsOn="{x:Bind S.SoundFocusDone, Mode=TwoWay}"
+                          AutomationProperties.Name="Sound when the focus timer finishes" />
+        </Grid>
+
         <TextBlock Text="Changes apply to the island right away. There is no Save button." Style="{StaticResource RowDesc}" Margin="0,24,0,0" />
     </StackPanel>
 </UserControl>

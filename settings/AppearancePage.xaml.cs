@@ -16,7 +16,7 @@ namespace StatletSettings;
 public sealed partial class AppearancePage : UserControl
 {
     static readonly (string Name, string Hex)[] TintChoices = [("Graphite (default)", "#1C1E24"), ("Ink", "#0B0D12"), ("Plum", "#2A1F33"), ("Pine", "#17271F"), ("Navy", "#141F33")];
-    static readonly (string Name, string Hex)[] AccentChoices = [("Sky (default)", "#4CC2FF"), ("Mint", "#6EE7A0"), ("Amber", "#FFB020"), ("Rose", "#FF7AB6"), ("Lilac", "#B69CFF")];
+    static readonly (string Name, string Hex)[] AccentChoices = [("Sky (default)", "#4CC2FF"), ("Mint", "#6EE7A0"), ("Amber", "#FFB020"), ("Rose", "#FF7AB6"), ("Lilac", "#B69CFF"), ("White", "#FFFFFF")];
     // Open sizes in epx, as in island/src/tokens.h: resting, hover, card, music
     static readonly (double W, double H)[] Sizes = [(176, 34), (244, 68), (368, 104), (368, 168)];
 

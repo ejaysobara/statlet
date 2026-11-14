@@ -1,6 +1,7 @@
 #include "media.h"
 #include "log.h"
 #include <shcore.h>
+#include <vector>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Media.Control.h>
 #include <winrt/Windows.Storage.Streams.h>
@@ -88,6 +89,23 @@ winrt::fire_and_forget ReadArtAsync(std::function<void(com_ptr<IWICBitmapSource>
 }
 
 }  // namespace
+
+bool ArtColor(IWICBitmapSource* art, Rgba& out) {
+    UINT w = 0, h = 0;
+    if (!art || FAILED(art->GetSize(&w, &h)) || !w || !h) return false;
+    try {
+        auto wic = winrt::create_instance<IWICImagingFactory>(CLSID_WICImagingFactory);
+        UINT big = std::max(w, h), sw = big <= 64 ? w : std::max(1u, w * 64 / big), sh = big <= 64 ? h : std::max(1u, h * 64 / big);
+        com_ptr<IWICBitmapScaler> scaler;
+        check_hresult(wic->CreateBitmapScaler(scaler.put()));
+        check_hresult(scaler->Initialize(art, sw, sh, WICBitmapInterpolationModeFant));
+        std::vector<uint8_t> px(size_t(sw) * sh * 4);
+        check_hresult(scaler->CopyPixels(nullptr, sw * 4, UINT(px.size()), px.data()));  // ReadArt hands out 32bppPBGRA
+        return DominantColor(px.data(), size_t(sw) * sh, out);
+    } catch (...) {
+        return false;
+    }
+}
 
 void WatchMedia(HWND hwnd, UINT msg) {
     wnd = hwnd;

@@ -21,15 +21,7 @@ inline const char* PowerReason(UINT event, PowerSetting kind, DWORD value, Power
     return back ? (kind == PowerSetting::Display ? "display on" : "lid open") : nullptr;
 }
 
-// Which timers run (W6: no wake-ups while nobody can see the island). The cursor poll only matters while the island is
-// on screen; the clock and usage polls stop while the display is off, the session is locked or the island is hidden.
-struct Timers {
-    bool hover, rest;
-};
-inline Timers TimersFor(bool away, bool hidden, bool displayOff, bool locked) {
-    bool seen = !displayOff && !locked;
-    return {seen && !away, seen && !hidden};
-}
+// Which timers run while seen or unseen lives in widgets.h.
 
 inline const char* SessionReason(WPARAM change) {
     if (change == WTS_SESSION_UNLOCK) return "unlock";

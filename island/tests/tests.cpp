@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <wincodec.h>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include "../src/gfx.h"
@@ -20,8 +21,15 @@
 #include "../src/placement.h"
 #include "../src/power.h"
 #include "../src/settings.h"
+#include "../src/bluetooth.h"
+#include "../src/capture.h"
+#include "../src/clock.h"
+#include "../src/downloads.h"
+#include "../src/widgets.h"
 #include <cstdarg>
 #include <string>
+// doctest's thread_local stream is freed after the heap at CRT exit (0xC0000374, ~7 in 100 runs); tests are single-threaded.
+#define DOCTEST_CONFIG_NO_MULTITHREADING
 #define DOCTEST_CONFIG_IMPLEMENT
 #pragma warning(push, 0)
 #include "vendor/doctest.h"
@@ -293,6 +301,34 @@ TEST_CASE("media") {  // rules from media.h
               RowFor(true, false, AP::Music) == MediaRow::Music, "after the peek: the setting");
     CHECK(ShouldPeek(true, true, true) && ShouldPeek(false, true, false), "new track, or playing again after hiding");
     CHECK(!ShouldPeek(false, true, true) && !ShouldPeek(true, false, false), "not a resume of the same song, not while paused");
+    Rgba c{};
+    auto fill = [](std::vector<uint8_t>& v, size_t from, size_t to, uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
+        for (size_t i = from; i < to; i++) v[i * 4] = uint8_t(b * a / 255), v[i * 4 + 1] = uint8_t(g * a / 255), v[i * 4 + 2] = uint8_t(r * a / 255), v[i * 4 + 3] = a;
+    };
+    std::vector<uint8_t> px(100 * 4);
+    fill(px, 0, 100, 200, 30, 40);
+    CHECK(DominantColor(px.data(), 100, c) && c.r == 200 && c.g == 30 && c.b == 40, "dominant: a solid cover");
+    fill(px, 0, 60, 20, 90, 200), fill(px, 60, 100, 230, 200, 10);
+    CHECK(DominantColor(px.data(), 100, c) && c.r == 20 && c.b == 200, "dominant: the larger of two colours");
+    fill(px, 0, 90, 128, 128, 128), fill(px, 90, 100, 230, 20, 60);
+    CHECK(DominantColor(px.data(), 100, c) && c.r == 230 && c.g == 20, "dominant: a vivid sliver beats a grey field");
+    fill(px, 0, 100, 128, 128, 128);
+    CHECK(DominantColor(px.data(), 100, c) && c.r == 128 && c.g == 128, "dominant: all grey is grey");
+    fill(px, 0, 100, 255, 0, 0, 0);
+    CHECK(!DominantColor(px.data(), 100, c) && !DominantColor(px.data(), 0, c), "dominant: transparent or empty has none");
+    std::vector<uint8_t> art(64 * 64 * 4);  // the largest size ArtColor hands to DominantColor
+    for (size_t i = 0; i < art.size(); i++) art[i] = uint8_t(i * 37 + i / 64);
+    for (size_t i = 3; i < art.size(); i += 4) art[i] = 255;
+    auto t0 = std::chrono::steady_clock::now();
+    DominantColor(art.data(), 64 * 64, c);
+    double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(ms < 5, "colour pick of a 64x64 cover takes %.2f ms", ms);
+    Rgba g0 = GradientStart({255, 100, 200, 250});
+    CHECK(g0.a == 255 && g0.r == 60 && g0.g == 120 && g0.b == 150, "the gradient starts from an opaque 60%% shade, not a see-through colour");
+    Rgba dark = LiftForGlass({255, 10, 10, 30}), bright = LiftForGlass({255, 250, 240, 200});
+    CHECK(std::abs((299 * dark.r + 587 * dark.g + 114 * dark.b) / 1000 - 140) <= 1 && dark.b > 30, "a dark colour lifts to luma 140");
+    CHECK(bright.r == 250 && bright.g == 240 && bright.b == 200, "a bright colour is untouched");
+    CHECK(RightTime(200, 50, false) == L"-2:30" && RightTime(200, 50, true) == L"3:20", "right-hand time: left or total");
     Tokens t;
     CHECK(FitCollapsedWidth(130, t, t.mediaPadX) == 144 && FitCollapsedWidth(130, t) == 156, "media rows use the smaller pad");
 }
@@ -406,13 +442,168 @@ TEST_CASE("power and session reasons") {  // PowerReason and SessionReason in po
     why = PowerReason(PBT_POWERSETTINGCHANGE, PowerSetting::Lid, 1, s);
     CHECK(why && !strcmp(why, "lid open"), "lid opened revalidates");
     CHECK(!PowerReason(PBT_POWERSETTINGCHANGE, PowerSetting::Other, 0, s), "battery, AC and saver settings: nothing");
-    Timers seen = TimersFor(false, false, false, false), slid = TimersFor(true, false, false, false), hidden = TimersFor(true, true, false, false);
-    CHECK(seen.hover && seen.rest, "on screen: every timer runs");
-    CHECK(!slid.hover && slid.rest, "slid away: no cursor poll, the clock keeps the accessible name current");
-    CHECK(!hidden.hover && !hidden.rest, "hidden: nothing runs");
-    CHECK(!TimersFor(false, false, true, false).rest && !TimersFor(false, false, false, true).rest, "display off or locked: nothing runs");
+    WidgetState seen{false, false, false, false}, slid{true, false, false, false}, hidden{true, true, false, false};
+    CHECK(WantHover(seen) && WantRest(seen), "on screen: every timer runs");
+    CHECK(!WantHover(slid) && WantRest(slid), "slid away: no cursor poll, the clock keeps the accessible name current");
+    CHECK(!WantHover(hidden) && !WantRest(hidden), "hidden: nothing runs");
+    CHECK(!WantRest({false, false, true, false}) && !WantRest({false, false, false, true}), "display off or locked: nothing runs");
     CHECK(SessionReason(WTS_SESSION_UNLOCK) &&SessionReason(WTS_CONSOLE_CONNECT) && SessionReason(WTS_REMOTE_CONNECT), "unlock and connects revalidate");
     CHECK(!SessionReason(WTS_SESSION_LOCK) && !SessionReason(WTS_CONSOLE_DISCONNECT), "lock and disconnect do not");
+}
+
+static int starts, stops;
+TEST_CASE("widget registry starts a widget only while it is wanted") {
+    starts = stops = 0;
+    std::array<Widget, 2> ws{{
+        {"a", WantRest, [] { ++starts; }, [] { ++stops; }},
+        {"b", WantRest, [] { ++starts; }, [] { ++stops; }, false},  // turned off: never runs
+    }};
+    WidgetState on{false, false, false, false}, off{false, false, false, true};
+    CHECK(Reconcile(ws, on) == 1, "starts the wanted one");
+    CHECK(Reconcile(ws, on) == 0, "idempotent: no second start");
+    CHECK((ws[0].running && !ws[1].running && starts == 1), "only the enabled one runs");
+    CHECK(Reconcile(ws, off) == 1, "locked: stops it");
+    CHECK((!ws[0].running && stops == 1), "stopped once");
+    CHECK(Reconcile(ws, off) == 0, "no second stop");
+}
+
+TEST_CASE("status slot glyphs and sizes (item 11)") {  // the four approved icons; four distinct shapes, one 16 epx slot
+    Tokens k;
+    CHECK((k.glyphBluetooth == 0xE702 && k.glyphDownload == 0xE896 && k.glyphDone == 0xE73E && k.glyphCamera == 0xE722), "approved code points");
+    CHECK((k.glyphBluetooth != k.glyphDownload && k.glyphDownload != k.glyphDone && k.glyphDone != k.glyphCamera && k.glyphCamera != k.glyphBluetooth), "distinct");
+    CHECK((k.statusGlyph <= k.statusSlotW && k.statusSlotW + k.restGap == 24), "14 epx glyph in a 16 epx slot, 24 px of width");
+}
+
+TEST_CASE("rest-line order (item 9)") {  // RestSequence in shape_math.h and the restOrder setting
+    using B = Tokens::RestBlock;
+    using I = RestItem;
+    std::array<B, 3> order = {B::Status, B::Clock, B::Usage};
+    CHECK((RestSequence(order, false) == std::vector<I>{I::Status, I::Clock, I::Usage}), "default, no music");
+    CHECK((RestSequence(order, true) == std::vector<I>{I::Status, I::Art, I::Clock, I::Usage, I::Equalizer}), "default with music: art and equalizer frame the date and bars, as today");
+    CHECK((RestSequence({B::Clock, B::Usage, B::Status}, true) == std::vector<I>{I::Art, I::Clock, I::Usage, I::Equalizer, I::Status}), "status last: it stays outside the frame");
+    CHECK((RestSequence({B::Usage, B::Status, B::Clock}, true) == std::vector<I>{I::Art, I::Usage, I::Status, I::Clock, I::Equalizer}), "status between: inside the frame");
+    int perms = 0;  // every permutation keeps the same blocks (so the width is the same) and frames them with the music
+    std::array<B, 3> p = {B::Status, B::Clock, B::Usage};
+    std::sort(p.begin(), p.end());
+    do {
+        ++perms;
+        auto plain = RestSequence(p, false), tucked = RestSequence(p, true);
+        CHECK(plain.size() == 3 && tucked.size() == 5, "sizes for permutation %d", perms);
+        CHECK((std::count(tucked.begin(), tucked.end(), I::Art) == 1 && std::count(tucked.begin(), tucked.end(), I::Equalizer) == 1), "one art and one equalizer, permutation %d", perms);
+        std::vector<I> without;
+        for (auto i : tucked) if (i != I::Art && i != I::Equalizer) without.push_back(i);
+        CHECK(without == plain, "the music only adds items, permutation %d", perms);
+        auto art = std::find(tucked.begin(), tucked.end(), I::Art), eq = std::find(tucked.begin(), tucked.end(), I::Equalizer);
+        CHECK(art < eq, "art before equalizer, permutation %d", perms);
+    } while (std::next_permutation(p.begin(), p.end()));
+    CHECK(perms == 6, "six orders");
+
+    auto parse = [](const char* json) { Tokens t; LoadSettings(t, json); return t.restOrder; };
+    CHECK((parse(R"({"restOrder":"clock,usage,status"})") == std::array<B, 3>{B::Clock, B::Usage, B::Status}), "valid order applies");
+    CHECK((parse(R"({"topOffset":10,"restOrder":"usage,status,clock","speed":60})") == std::array<B, 3>{B::Usage, B::Status, B::Clock}), "valid order among other keys");
+    for (const char* bad : {R"({"restOrder":"clock,clock,usage"})", R"({"restOrder":"clock,usage"})", R"({"restOrder":"clock,usage,status,status"})", R"({"restOrder":"clock,usage,time"})",
+                            R"({"restOrder":""})", R"({"restOrder":5})", R"({})"})
+        CHECK((parse(bad) == order), "bad value keeps the default: %s", bad);
+    Tokens d, on;
+    CHECK((d.soundScreenshot && !d.soundDownloadDone && d.soundFocusDone), "sound defaults: screenshot on, download off, focus on");
+    LoadSettings(on, R"({"soundScreenshot":false,"soundDownloadDone":true,"soundFocusDone":false})");
+    CHECK((!on.soundScreenshot && on.soundDownloadDone && !on.soundFocusDone), "sound switches apply");
+}
+
+TEST_CASE("screenshot file name and folder (item 8)") {  // ShotFileName and ResolveShotDir in capture.h
+    SYSTEMTIME st{};
+    st.wYear = 2026, st.wMonth = 11, st.wDay = 13, st.wHour = 6, st.wMinute = 30, st.wSecond = 12;
+    std::wstring name = ShotFileName(st);
+    CHECK(name == L"Statlet 2026-11-13 06-30-12.png", "name: %ls", name.c_str());
+    CHECK(name.find_first_of(L"\\/:*?\"<>|") == std::wstring::npos, "no character Windows rejects");
+    CHECK(ResolveShotDir(L"C:\\t", L"C:\\Users\\a\\Pictures\\Screenshots", L"C:\\Users\\a\\Pictures") == L"C:\\t", "the test override wins");
+    CHECK(ResolveShotDir(L"", L"C:\\Users\\a\\Pictures\\Screenshots", L"C:\\Users\\a\\Pictures") == L"C:\\Users\\a\\Pictures\\Screenshots", "the Screenshots folder");
+    CHECK(ResolveShotDir(L"", L"", L"C:\\Users\\a\\Pictures") == L"C:\\Users\\a\\Pictures\\Screenshots", "falls back to Pictures\\Screenshots when it is missing");
+    CHECK(ResolveShotDir(L"", L"", L"").empty(), "nothing known: empty, so the save fails cleanly");
+}
+
+TEST_CASE("bluetooth tracker (item 6)") {  // BtTracker in bluetooth.h: connect only, nothing during the first enumeration
+    BtTracker b;
+    CHECK(!b.Update(L"phone", true) && !b.Update(L"buds", false), "devices found while enumerating never peek, connected or not");
+    b.EnumerationDone();
+    CHECK(!b.Update(L"phone", true), "an update that repeats the state does not peek");
+    CHECK(b.Update(L"buds", true), "false -> true peeks");
+    CHECK(!b.Update(L"buds", true), "and only once");
+    CHECK(!b.Update(L"buds", false), "disconnecting does not peek");
+    CHECK(b.Update(L"buds", true), "connecting again peeks again");
+    b.Remove(L"buds");
+    CHECK(b.Update(L"buds", true), "removed, then re-added already connected: peeks (a fresh pairing)");
+    CHECK(b.Update(L"new", true), "a device first seen after enumeration, connected, peeks");
+    Tokens d, t, junk;
+    CHECK(d.btIcon, "on by default");
+    LoadSettings(t, R"({"btIcon":false})");
+    CHECK(!t.btIcon, "false applies");
+    LoadSettings(junk, R"({"btIcon":"maybe"})");
+    CHECK(junk.btIcon, "a bad value keeps the default");
+}
+
+TEST_CASE("download partial names (item 7)") {  // IsPartialName in downloads.h
+    for (auto n : {L"a.zip.crdownload", L"a.zip.part", L"a.zip.partial", L"a.zip.download", L"a.zip.opdownload", L"A.ZIP.CrDownload", L"x.PART"})
+        CHECK(IsPartialName(n), "%ls should be partial", n);
+    for (auto n : {L"a.zip", L"notes.txt", L"part", L".part", L"a.partx", L"crdownload", L"report-download.pdf", L""})
+        CHECK(!IsPartialName(n), "%ls should not be partial", n);
+    CHECK(PartialExtLen(L"a.zip.crdownload") == 11, "extension length");
+}
+
+TEST_CASE("download tracker (item 7)") {  // Idle -> Active -> Done -> Idle, with a fake clock in ms
+    using S = DownloadTracker::State;
+    auto exists = [](const std::wstring&) { return true; };
+    auto gone = [](const std::wstring&) { return false; };
+    DownloadTracker d;
+    CHECK(d.Observe(1000, {}, exists) == S::Idle && !d.Busy(1000), "nothing there: idle");
+    CHECK(d.Observe(2000, {{L"a.zip.crdownload", 10}}, exists) == S::Active && d.Busy(2000), "a new partial: active");
+    CHECK(d.Observe(5000, {{L"a.zip.crdownload", 10}}, exists) == S::Active, "no growth for 3 s is still active");
+    CHECK(d.Observe(6000, {{L"a.zip.crdownload", 20}}, exists) == S::Active, "growth: active");
+    CHECK(d.Observe(7000, {}, exists) == S::Done && d.Busy(7000), "renamed to a.zip: done");
+    CHECK(d.Observe(8500, {}, exists) == S::Done, "done shows 2 s");
+    CHECK(d.Observe(9000, {}, exists) == S::Idle && !d.Busy(9000), "then idle");
+
+    DownloadTracker c;  // cancelled: the partial is deleted, no finished file
+    c.Observe(1000, {{L"b.zip.part", 5}}, gone);
+    CHECK(c.Observe(2000, {}, gone) == S::Idle, "a deleted partial is idle, not done");
+
+    DownloadTracker s;  // stalled: a crashed browser leaves its partial behind
+    s.Observe(1000, {{L"c.zip.crdownload", 5}}, exists);
+    CHECK(s.Observe(30000, {{L"c.zip.crdownload", 5}}, exists) == S::Active, "29 s without growth: still active");
+    CHECK(s.Observe(61001, {{L"c.zip.crdownload", 5}}, exists) == S::Idle && !s.Busy(61001), "60 s without growth: ignored, timer off");
+    CHECK(s.Observe(62000, {{L"c.zip.crdownload", 6}}, exists) == S::Active, "growing again: active");
+
+    DownloadTracker two;  // two overlapping downloads: the icon stays until the last one ends
+    two.Observe(1000, {{L"a.crdownload", 1}, {L"b.crdownload", 1}}, exists);
+    CHECK(two.Observe(2000, {{L"b.crdownload", 2}}, exists) == S::Active, "one finished, one running: active");
+    CHECK(two.Observe(3000, {}, exists) == S::Done, "last one done: done");
+
+    DownloadTracker seed;  // partials present at start are old
+    seed.Seed(100000, {{L"d.crdownload", 9}});
+    CHECK(seed.Observe(100500, {{L"d.crdownload", 9}}, exists) == S::Idle && !seed.Busy(100500), "leftover at start: idle");
+    CHECK(seed.Observe(101000, {{L"d.crdownload", 12}}, exists) == S::Active, "it grows: active");
+
+    DownloadTracker early;  // the island starts in the first minute after boot (autostart): a leftover is still old
+    early.Seed(5000, {{L"e.crdownload", 9}});
+    CHECK(early.Observe(5500, {{L"e.crdownload", 9}}, exists) == S::Idle && !early.Busy(5500), "leftover seeded 5 s after boot: idle");
+}
+
+// tests\fixtures\settings-contract.json is also read by settings.tests (SettingsTests.cs): both sides parse every key to the
+// same values, so a renamed or mistyped key fails on one side.
+TEST_CASE("settings contract with the settings app (item 10)") {
+    FILE* f = nullptr;
+    fopen_s(&f, "..\\tests\\fixtures\\settings-contract.json", "rb");
+    REQUIRE_MESSAGE(f, "tests\\fixtures\\settings-contract.json not found (run from the island folder)");
+    std::string json(1 << 12, '\0');
+    json.resize(fread(json.data(), 1, json.size(), f));
+    fclose(f);
+    Tokens d, t;
+    LoadSettings(t, json);
+    CHECK((t.showWeekday != d.showWeekday && t.btIcon != d.btIcon && t.downloadIcon != d.downloadIcon), "every icon key flips its default");
+    CHECK((t.soundScreenshot != d.soundScreenshot && t.soundDownloadDone != d.soundDownloadDone && t.soundFocusDone != d.soundFocusDone), "every sound key flips its default");
+    using B = Tokens::RestBlock;
+    CHECK((t.restOrder == std::array<B, 3>{B::Usage, B::Status, B::Clock}), "restOrder usage,status,clock");
+    CHECK((!t.showWeekday && !t.btIcon && !t.downloadIcon && !t.soundScreenshot && t.soundDownloadDone && !t.soundFocusDone), "the values the settings app reads from the same file");
 }
 
 TEST_CASE("spring parity with the settings app") {  // tests\fixtures\spring.json is also checked by settings.tests (Motion.cs)
@@ -444,6 +635,76 @@ TEST_CASE("data dir honors STATLET_DATA_DIR") {  // so test launches never touch
     CHECK(d.size() > 8 && d.compare(d.size() - 8, 8, L"\\Statlet") == 0, "default ends in \\Statlet: %ls", d.c_str());
 }
 
+TEST_CASE("bar style settings") {
+    Tokens d;
+    CHECK(d.progressStyle == Tokens::ProgressStyle::Wave && d.knob == Tokens::Knob::Never && !d.artAccent && !d.timeTotal, "defaults");
+    auto load = [](const char* json) { Tokens t; LoadSettings(t, json); return t; };
+    using PS = Tokens::ProgressStyle;
+    CHECK(load("{\"progressStyle\":\"segmented\"}").progressStyle == PS::Segmented && load("{\"progressStyle\":\"hairline\"}").progressStyle == PS::Hairline &&
+              load("{\"progressStyle\":\"gradient\"}").progressStyle == PS::Gradient && load("{\"progressStyle\":\"line\"}").progressStyle == PS::Line, "styles");
+    CHECK(load("{\"playheadKnob\":\"hover\"}").knob == Tokens::Knob::Hover && load("{\"playheadKnob\":\"always\"}").knob == Tokens::Knob::Always &&
+              load("{\"playheadKnob\":\"never\"}").knob == Tokens::Knob::Never, "knob");
+    CHECK(load("{\"artAccent\":true}").artAccent, "art accent");
+    CHECK(load("{\"progressStyle\":\"zigzag\"}").progressStyle == PS::Wave, "an unknown style keeps the default");
+    CHECK(load("{\"playheadKnob\":7}").knob == Tokens::Knob::Never && !load("{\"artAccent\":maybe}").artAccent, "bad knob and flag keep defaults");
+    Tokens s;
+    LoadState(s, "{\"timeTotal\":true}");
+    CHECK(s.timeTotal, "state.json: time total");
+    LoadState(s, "garbage");
+    CHECK(s.timeTotal, "garbage state keeps the value");
+}
+
+TEST_CASE("bar style edge cases") {  // QA additions: boundaries of the v2 bar-style helpers
+    // RightTime: past the end shows -0:00, an hour or more gets hours, no duration is -0:00.
+    CHECK(RightTime(200, 250, false) == L"-0:00", "position past the end clamps to -0:00");
+    CHECK(RightTime(3725, 0, true) == L"1:02:05" && RightTime(3725, 25, false) == L"-1:01:40", "an hour or more shows hours");
+    CHECK(RightTime(0, 0, false) == L"-0:00" && RightTime(0, 0, true) == L"0:00", "no duration");
+    // LiftForGlass: black lifts to grey at the floor, the floor itself and white are untouched.
+    Rgba black = LiftForGlass({255, 0, 0, 0}), floorGrey = LiftForGlass({255, 140, 140, 140}), white = LiftForGlass({255, 255, 255, 255});
+    CHECK(black.r == 140 && black.g == 140 && black.b == 140, "black lifts to luma 140 grey");
+    CHECK(floorGrey.r == 140 && floorGrey.g == 140 && floorGrey.b == 140, "luma exactly 140 is untouched");
+    CHECK(white.r == 255 && white.g == 255 && white.b == 255, "white is untouched");
+    // DominantColor: alpha 127 is ignored, 128 counts, and premultiplied pixels come back un-premultiplied.
+    Rgba c{};
+    auto fillA = [](std::vector<uint8_t>& v, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+        for (size_t i = 0; i < v.size() / 4; i++) v[i * 4] = uint8_t(b * a / 255), v[i * 4 + 1] = uint8_t(g * a / 255), v[i * 4 + 2] = uint8_t(r * a / 255), v[i * 4 + 3] = a;
+    };
+    std::vector<uint8_t> px(100 * 4);
+    fillA(px, 200, 30, 40, 127);
+    CHECK(!DominantColor(px.data(), 100, c), "alpha 127 counts as transparent");
+    fillA(px, 200, 30, 40, 128);
+    CHECK(DominantColor(px.data(), 100, c) && std::abs(int(c.r) - 200) <= 2 && std::abs(int(c.g) - 30) <= 2 && std::abs(int(c.b) - 40) <= 2, "alpha 128 counts, colour un-premultiplied");
+    // Settings: state.json owns timeTotal; settings.json must not set it; false and absent keys behave.
+    Tokens t;
+    LoadSettings(t, "{\"timeTotal\":true}");
+    CHECK(!t.timeTotal, "a stray timeTotal in settings.json is ignored");
+    LoadState(t, "{\"timeTotal\":true}");
+    LoadState(t, "{}");
+    CHECK(t.timeTotal, "state.json without the key keeps the value");
+    LoadState(t, "{\"timeTotal\":false}");
+    CHECK(!t.timeTotal, "state.json can turn it back off");
+    auto load = [](const char* json) { Tokens k; LoadSettings(k, json); return k; };
+    CHECK(load("{\"playheadKnob\":\"Hover\"}").knob == Tokens::Knob::Never && load("{\"progressStyle\":\"Hairline\"}").progressStyle == Tokens::ProgressStyle::Wave,
+          "values are case-sensitive: a wrong case keeps the default");
+}
+
+TEST_CASE("state.json write") {
+    std::wstring dir = std::wstring(_wgetenv(L"TEMP")) + L"\\statlet-state-test";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    CHECK(WriteState(dir, true), "writes into an existing folder");
+    FILE* f = _wfopen((dir + L"\\state.json").c_str(), L"rb");
+    char buf[64] = {};
+    if (f) fread(buf, 1, sizeof buf - 1, f), fclose(f);
+    Tokens t;
+    LoadState(t, buf);
+    CHECK(t.timeTotal, "reads back what was written");
+    CHECK(GetFileAttributesW((dir + L"\\state.json.tmp").c_str()) == INVALID_FILE_ATTRIBUTES, "no temp file is left behind");
+    std::wstring missing = dir + L"\\no\\such";
+    CHECK(!WriteState(missing, true) && GetFileAttributesW((missing + L"\\state.json.tmp").c_str()) == INVALID_FILE_ATTRIBUTES, "a failed write returns false and leaves no temp file");
+    DeleteFileW((dir + L"\\state.json").c_str());
+    RemoveDirectoryW(dir.c_str());
+}
+
 TEST_CASE("settings edge cases") {  // the file is hand-editable, so bad values keep the defaults
     Tokens d;
     auto load = [](const char* json) { Tokens t; LoadSettings(t, json); return t; };
@@ -472,6 +733,182 @@ static Gfx& Rig() {
 }
 
 TEST_SUITE_BEGIN("render");
+
+TEST_CASE("weekday rest line") {  // clock.h and the showWeekday setting (v2 item 5, ADR-0002); en-US
+    SYSTEMTIME thu{};
+    thu.wYear = 2026, thu.wMonth = 11, thu.wDay = 12, thu.wDayOfWeek = 4;
+    CHECK(RestDate(&thu, true, L"en-US") == L"Thu Nov 12" && RestDate(&thu, false, L"en-US") == L"Nov 12", "day text: %ls", RestDate(&thu, true, L"en-US").c_str());
+    CHECK(WidestTimeSamples().size() == 48, "minute 00 and 59 of each hour: %zu", WidestTimeSamples().size());
+    Tokens d, t, junk;
+    CHECK(d.showWeekday, "on by default");
+    LoadSettings(t, R"({"showWeekday":false})");
+    CHECK(!t.showWeekday, "false applies");
+    LoadSettings(junk, R"({"showWeekday":"maybe"})");
+    CHECK(junk.showWeekday, "a bad value keeps the default");
+}
+
+TEST_CASE("day-fitted pill stays within the measured band for every day of 2026 and 2027") {  // ADR-0002 width guard, clock only
+    Gfx& gfx = Rig();
+    Tokens t;
+    Text rest(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    float widest = -1;
+    std::wstring widestTime;
+    for (auto& s : WidestTimeSamples()) {
+        rest.Set(s);
+        if (rest.Width() > widest) widest = rest.Width(), widestTime = s;
+    }
+    FILETIME ft{};
+    SYSTEMTIME start{};
+    start.wYear = 2026, start.wMonth = 1, start.wDay = 1;
+    SystemTimeToFileTime(&start, &ft);
+    ULARGE_INTEGER u{};
+    u.LowPart = ft.dwLowDateTime, u.HighPart = ft.dwHighDateTime;
+    int days = 0, outside = 0;
+    float lo = 1e9f, hi = 0;
+    for (; days < 730; ++days, u.QuadPart += 864000000000ULL) {  // 100 ns ticks per day
+        FILETIME f{u.LowPart, u.HighPart};
+        SYSTEMTIME st{};
+        FileTimeToSystemTime(&f, &st);
+        rest.Set(RestDate(&st, true) + L"  " + widestTime);
+        float w = FitCollapsedWidth(rest.Width() + t.restGap + t.restBarW, t);
+        lo = std::min(lo, w), hi = std::max(hi, w);
+        if (w < 160 || w > 188) outside++;  // DirectWrite measured 160-188 for Segoe UI Variable 12 px; the spec's Pillow estimate was 152-180 (flagged to the Architect)
+    }
+    CHECK(days == 730 && outside == 0, "%d days, %d outside 160-188 (range %.0f to %.0f)", days, outside, lo, hi);
+}
+
+TEST_CASE("status slot keeps the pill under the cap for every day of 2026 and 2027 (item 7)") {  // plan: 212 clock only, 256 with music, cap 260
+    Gfx& gfx = Rig();
+    Tokens t;
+    Text rest(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    float widest = -1;
+    std::wstring widestTime;
+    for (auto& s : WidestTimeSamples()) {
+        rest.Set(s);
+        if (rest.Width() > widest) widest = rest.Width(), widestTime = s;
+    }
+    float eq = 4 * t.eqBarW + 3 * t.eqGap, slot = t.statusSlotW + t.restGap;
+    FILETIME ft{};
+    SYSTEMTIME start{};
+    start.wYear = 2026, start.wMonth = 1, start.wDay = 1;
+    SystemTimeToFileTime(&start, &ft);
+    ULARGE_INTEGER u{};
+    u.LowPart = ft.dwLowDateTime, u.HighPart = ft.dwHighDateTime;
+    float plain = 0, music = 0;
+    for (int days = 0; days < 730; ++days, u.QuadPart += 864000000000ULL) {
+        FILETIME f{u.LowPart, u.HighPart};
+        SYSTEMTIME st{};
+        FileTimeToSystemTime(&f, &st);
+        rest.Set(RestDate(&st, true) + L"  " + widestTime);
+        float clock = rest.Width() + t.restGap + t.restBarW;
+        plain = std::max(plain, FitCollapsedWidth(clock + slot, t));
+        float tucked = t.artSmall + t.restGap + clock + t.restGap + eq;  // the row as LayoutCollapsed builds it
+        music = std::max(music, std::ceil((tucked + slot + 2 * t.mediaPadX) / t.widthStep) * t.widthStep);  // unclamped, so a clip would show
+    }
+    CHECK(plain <= 212, "clock only with the slot: %.0f px", plain);
+    CHECK(music <= 256 && music < t.collapsedMaxW, "music with the slot: %.0f px (cap %.0f)", music, t.collapsedMaxW);
+}
+
+// ---- QA (v2 item 5): 12h and 24h bands, and the rollover property. Not part of the dev branch. ----
+static std::wstring QaTime(const wchar_t* loc, WORD h, WORD m) {
+    SYSTEMTIME st{}; st.wHour = h; st.wMinute = m;
+    wchar_t b[64]; GetTimeFormatEx(loc, TIME_NOSECONDS, &st, nullptr, b, 64); return b;
+}
+static SYSTEMTIME QaDay(int dayIndex) {  // dayIndex days after 2026-01-01
+    FILETIME ft{}; SYSTEMTIME s{}; s.wYear = 2026, s.wMonth = 1, s.wDay = 1; SystemTimeToFileTime(&s, &ft);
+    ULARGE_INTEGER u{}; u.LowPart = ft.dwLowDateTime, u.HighPart = ft.dwHighDateTime; u.QuadPart += 864000000000ULL * dayIndex;
+    FILETIME f{u.LowPart, u.HighPart}; SYSTEMTIME o{}; FileTimeToSystemTime(&f, &o); return o;
+}
+TEST_CASE("QA weekday: pill width band, 12h and 24h, every day of 2026 and 2027") {
+    Gfx& gfx = Rig(); Tokens t;
+    Text rest(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    for (const wchar_t* loc : {L"en-US", L"en-GB"}) {
+        float widest = -1; std::wstring widestTime;  // the true widest over all 1440 minutes
+        for (WORD h = 0; h < 24; ++h) for (WORD m = 0; m < 60; ++m) { auto s = QaTime(loc, h, m); rest.Set(s); if (rest.Width() > widest) widest = rest.Width(), widestTime = s; }
+        float lo = 1e9f, hi = 0; int outside = 0;
+        const bool h12 = wcscmp(loc, L"en-US") == 0; const float bandLo = h12 ? 160.f : 140.f, bandHi = h12 ? 188.f : 168.f;  // Architect: 24h has its own band
+        for (int d = 0; d < 730; ++d) {
+            auto st = QaDay(d); rest.Set(RestDate(&st, true, loc) + L"  " + widestTime);
+            float w = FitCollapsedWidth(rest.Width() + t.restGap + t.restBarW, t); lo = std::min(lo, w), hi = std::max(hi, w); if (w < bandLo || w > bandHi) outside++;
+        }
+        MESSAGE(Fmt("%ls widest time '%ls' pill range %.0f to %.0f, %d days outside %.0f-%.0f", loc, widestTime.c_str(), lo, hi, outside, bandLo, bandHi));
+        CHECK(outside == 0, "%ls: %d days outside %.0f-%.0f (range %.0f to %.0f)", loc, outside, bandLo, bandHi, lo, hi);
+    }
+}
+TEST_CASE("QA weekday: current-locale samples contain the true widest time (what MeasureWidestTime relies on)") {
+    Gfx& gfx = Rig(); Tokens t;
+    Text rest(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    float sampled = -1, all = -1;
+    for (auto& s : WidestTimeSamples()) { rest.Set(s); sampled = std::max(sampled, rest.Width()); }
+    for (WORD h = 0; h < 24; ++h) for (WORD m = 0; m < 60; ++m) { rest.Set(QaTime(LOCALE_NAME_USER_DEFAULT, h, m)); all = std::max(all, rest.Width()); }
+    CHECK(sampled == all, "samples %.2f vs all 1440 minutes %.2f", sampled, all);
+}
+TEST_CASE("QA weekday: width never moves during a day (9:59 to 10:00, every minute), changes only with the date at midnight") {
+    Gfx& gfx = Rig(); Tokens t;
+    Text rest(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true}), meas(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+    for (const wchar_t* loc : {L"en-US", L"en-GB"}) {
+        float widest = -1; std::wstring wt;
+        for (WORD h = 0; h < 24; ++h) for (WORD m : {WORD(0), WORD(59)}) { auto s = QaTime(loc, h, m); meas.Set(s); if (meas.Width() > widest) widest = meas.Width(), wt = s; }
+        int moved = 0, clamped = 0, days = 0; float prevPill = -1; int dateChanges = 0;
+        for (int d = 0; d < 14; ++d) {  // two weeks: every weekday twice
+            auto st = QaDay(d + 140); auto date = RestDate(&st, true, loc);
+            meas.Set(date + L"  " + wt); float dayW = meas.Width(), pill0 = -1;
+            for (WORD h = 0; h < 24; ++h) for (WORD m = 0; m < 60; ++m) {
+                rest.Set(date + L"  " + QaTime(loc, h, m));
+                if (rest.Width() > dayW + 0.01f) clamped++;  // the line would be wider than the reserved width: dayExtra clamps to 0 and the pill would grow
+                float extra = std::max(0.f, dayW - rest.Width());
+                float pill = FitCollapsedWidth(rest.Width() + extra + t.restGap + t.restBarW, t);
+                if (pill0 < 0) pill0 = pill; else if (pill != pill0) moved++;
+            }
+            if (prevPill >= 0 && pill0 != prevPill) dateChanges++;
+            prevPill = pill0; days++;
+        }
+        MESSAGE(Fmt("%ls: %d days x 1440 minutes, minutes where the pill moved: %d, lines wider than reserved: %d, midnight width changes over %d day boundaries: %d", loc, days, moved, clamped, days - 1, dateChanges));
+        CHECK(moved == 0, "%ls: the pill moved %d times inside a day", loc, moved);
+        CHECK(clamped == 0, "%ls: %d minutes wider than the day's widest time", loc, clamped);
+    }
+}
+
+TEST_CASE("the date shrinks to the weekday when the tucked row would pass the cap, at every text size (item 7 follow-up)") {
+    Gfx& gfx = Rig();
+    for (float textScale : {0.85f, 1.f, 1.1f, 1.2f}) {
+        Tokens t;
+        std::string json = Fmt("{\"textScale\":%g}", textScale);
+        LoadSettings(t, json);
+        Text rest(gfx, {t.typeClock, DWRITE_FONT_WEIGHT_NORMAL, t.ink2, true});
+        float widest = -1;
+        std::wstring widestTime;
+        for (auto& s : WidestTimeSamples()) {
+            rest.Set(s);
+            if (rest.Width() > widest) widest = rest.Width(), widestTime = s;
+        }
+        for (bool slot : {false, true}) {
+            int shrunk = 0, days = 0, clipped = 0;
+            SYSTEMTIME st{};
+            st.wYear = 2026, st.wMonth = 1, st.wDay = 1;
+            FILETIME ft{};
+            SystemTimeToFileTime(&st, &ft);
+            ULARGE_INTEGER u{};
+            u.LowPart = ft.dwLowDateTime, u.HighPart = ft.dwHighDateTime;
+            for (; days < 365; ++days, u.QuadPart += 864000000000ULL) {
+                FILETIME f{u.LowPart, u.HighPart};
+                FileTimeToSystemTime(&f, &st);
+                rest.Set(RestDate(&st, true) + L"  " + widestTime);
+                float w = rest.Width();
+                if (TuckedRowTooWide(t, slot, w)) {
+                    ++shrunk;
+                    rest.Set(ShortDay(&st) + L"  " + widestTime);  // what UpdateClock shows instead
+                    w = rest.Width();
+                }
+                if (TuckedRowTooWide(t, slot, w)) ++clipped;  // even the weekday is too wide: nothing more to give
+            }
+            MESSAGE(Fmt("text scale %.2f, slot %d: date shortened on %d of %d days", textScale, int(slot), shrunk, days));
+            CHECK(clipped == 0, "scale %.2f slot %d: %d days still pass the cap with the short date", textScale, int(slot), clipped);
+            if (textScale == 1.f && !slot) CHECK(shrunk == 0, "100%% text, no slot: the full date always fits (%d days shortened)", shrunk);
+            if (textScale == 1.2f && slot) CHECK(shrunk > 0, "120%% text with the slot should shorten the date on some days");
+        }
+    }
+}
 
 TEST_CASE("text and icon goldens") {
     Gfx& gfx = Rig();
@@ -658,6 +1095,8 @@ TEST_CASE("click-through") {
     int cx = (mi.rcWork.left + mi.rcWork.right) / 2, cy = mi.rcWork.top + int(317 * scale);  // middle of the collapsed island
     SetCursorPos(cx, cy + int(400 * scale));
     CHECK(CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi), "could not start out\\statlet.exe");
+    // The child has its copy: clear ours, or the "instance" suite's island inherits bench mode and writes no log.
+    for (auto name : {L"ISLAND_BENCH", L"STATLET_TOP_OFFSET"}) SetEnvironmentVariableW(name, nullptr);
     Sleep(1500);
     HWND island = FindWindowW(L"StatletIsland", nullptr);
     CHECK(island, "island window not found");
@@ -805,6 +1244,250 @@ TEST_CASE("a test island runs beside the real one and revalidates on resume, unl
     if (WaitForSingleObject(pi.hProcess, 5000) != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+}
+
+// Item 9 end to end: the island logs "sound <event>" when an event's switch is on and nothing when it is off. Here the download
+// switch is turned on (default off) and the screenshot switch off (default on); focus keeps its default (on). The sounds are
+// not played (STATLET_SOUND_SILENT), only logged.
+TEST_CASE("a test island plays the sounds whose switches are on (item 9)") {
+    constexpr WPARAM kSave = 5;  // main.cpp's MenuSaveShot
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    auto dir = std::filesystem::path(self).parent_path();
+    std::wstring data = (dir / L"instance-sound").wstring(), dl = (dir / L"instance-sound-downloads").wstring(), shots = (dir / L"instance-sound-shots").wstring(), log = data + L"\\island.log";
+    std::error_code ec;
+    std::filesystem::remove_all(dl, ec);
+    std::filesystem::remove_all(shots, ec);
+    std::filesystem::create_directories(data);
+    std::filesystem::create_directories(dl);
+    if (FILE* f = _wfopen((data + L"\\settings.json").c_str(), L"wb")) {
+        fputs(R"({"soundScreenshot":false,"soundDownloadDone":true})", f);
+        fclose(f);
+    }
+    uintmax_t before = std::filesystem::file_size(log, ec);
+    if (ec) before = 0;
+    SetEnvironmentVariableW(L"STATLET_INSTANCE", L"testsound");
+    SetEnvironmentVariableW(L"STATLET_DATA_DIR", data.c_str());
+    SetEnvironmentVariableW(L"STATLET_DOWNLOADS_DIR", dl.c_str());
+    SetEnvironmentVariableW(L"STATLET_SCREENSHOT_DIR", shots.c_str());
+    SetEnvironmentVariableW(L"STATLET_SOUND_SILENT", L"1");
+    SetEnvironmentVariableW(L"STATLET_FOCUS_SECONDS", L"2");
+    SetEnvironmentVariableW(L"STATLET_DEMO", L"focus");  // starts a Focus timer 4 s in; it ends 2 s later
+    SetEnvironmentVariableW(L"STATLET_TOP_OFFSET", L"300");
+    std::wstring cmd = L"\"" + (dir / L"statlet.exe").wstring() + L"\"";
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    for (auto name : {L"STATLET_INSTANCE", L"STATLET_DATA_DIR", L"STATLET_DOWNLOADS_DIR", L"STATLET_SCREENSHOT_DIR", L"STATLET_SOUND_SILENT", L"STATLET_FOCUS_SECONDS", L"STATLET_DEMO", L"STATLET_TOP_OFFSET"})
+        SetEnvironmentVariableW(name, nullptr);
+    REQUIRE_MESSAGE(started, "could not start statlet.exe beside the tests");
+    HWND island = nullptr;
+    for (int i = 0; i < 50 && !island; i++) Sleep(100), island = IslandOf(pi.dwProcessId);
+    REQUIRE_MESSAGE(island, "the test island did not start");
+    auto waitFor = [&](const char* line, int ms) {
+        for (int i = 0; i < ms / 50; i++) {
+            if (ReadFile(log, before).find(line) != std::string::npos) return true;
+            Sleep(50);
+        }
+        return false;
+    };
+    CHECK(waitFor("downloads watching", 6000), "the downloads watcher did not start");
+    PostMessageW(island, WM_APP + 8, kSave, 0);
+    CHECK(waitFor("screenshot saved", 4000), "the screenshot did not save");
+    if (FILE* f = _wfopen((dl + L"\\a.zip.crdownload").c_str(), L"ab")) {
+        fputs("data", f);
+        fclose(f);
+    }
+    CHECK(waitFor("downloads active", 3000), "the partial file did not start a download");
+    Sleep(300);
+    std::filesystem::rename(dl + L"\\a.zip.crdownload", dl + L"\\a.zip", ec);
+    CHECK(waitFor("sound download", 4000), "the download-done switch is on but no 'sound download' was logged");
+    CHECK(waitFor("sound focus", 9000), "the focus switch is on by default but no 'sound focus' was logged");
+    CHECK(ReadFile(log, before).find("sound screenshot") == std::string::npos, "the screenshot switch is off but 'sound screenshot' was logged");
+    CHECK(WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT, "the island exited");
+    PostMessageW(island, WM_CLOSE, 0, 0);
+    if (WaitForSingleObject(pi.hProcess, 5000) != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    std::filesystem::remove_all(dl, ec);
+    std::filesystem::remove_all(shots, ec);
+}
+
+// Item 8 end to end: the island's two screenshot actions (posted as the tray menu items would) on the monitor under the
+// cursor. Save: a PNG in the override folder, decoding at the monitor's pixel size. Copy: a CF_DIB of the same size on the
+// clipboard (this replaces what is on the clipboard while the test runs). The island is excluded from the picture by display
+// affinity; that is checked by eye (QA), not here.
+TEST_CASE("a test island saves and copies a screenshot of the monitor under the cursor (item 8)") {
+    constexpr WPARAM kCopy = 4, kSave = 5;  // main.cpp's MenuCopyShot and MenuSaveShot
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    auto dir = std::filesystem::path(self).parent_path();
+    std::wstring data = (dir / L"instance-shot").wstring(), out = (dir / L"instance-shot-out").wstring(), log = data + L"\\island.log";
+    std::error_code ec;
+    std::filesystem::remove_all(out, ec);
+    std::filesystem::create_directories(data);
+    uintmax_t before = std::filesystem::file_size(log, ec);
+    if (ec) before = 0;
+    SetEnvironmentVariableW(L"STATLET_INSTANCE", L"testshot");
+    SetEnvironmentVariableW(L"STATLET_DATA_DIR", data.c_str());
+    SetEnvironmentVariableW(L"STATLET_SCREENSHOT_DIR", out.c_str());
+    SetEnvironmentVariableW(L"STATLET_TOP_OFFSET", L"300");
+    SetEnvironmentVariableW(L"STATLET_SOUND_SILENT", L"1");
+    std::wstring cmd = L"\"" + (dir / L"statlet.exe").wstring() + L"\"";
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    for (auto name : {L"STATLET_INSTANCE", L"STATLET_DATA_DIR", L"STATLET_SCREENSHOT_DIR", L"STATLET_TOP_OFFSET", L"STATLET_SOUND_SILENT"}) SetEnvironmentVariableW(name, nullptr);
+    REQUIRE_MESSAGE(started, "could not start statlet.exe beside the tests");
+    HWND island = nullptr;
+    for (int i = 0; i < 50 && !island; i++) Sleep(100), island = IslandOf(pi.dwProcessId);
+    REQUIRE_MESSAGE(island, "the test island did not start");
+    auto waitFor = [&](const char* line, int ms) {
+        for (int i = 0; i < ms / 50; i++) {
+            if (ReadFile(log, before).find(line) != std::string::npos) return true;
+            Sleep(50);
+        }
+        return false;
+    };
+    for (int i = 0; i < 100 && ReadFile(log, before).find("timers on") == std::string::npos; i++) Sleep(50);
+    POINT at;
+    GetCursorPos(&at);
+    MONITORINFO mi{sizeof mi};
+    GetMonitorInfoW(MonitorFromPoint(at, MONITOR_DEFAULTTOPRIMARY), &mi);
+    LONG mw = mi.rcMonitor.right - mi.rcMonitor.left, mh = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+    PostMessageW(island, WM_APP + 8, kSave, 0);  // WM_APP_SHOT: the 8th message after WM_APP (see main.cpp's enum)
+    bool saved = waitFor("screenshot saved", 4000);
+    CHECK(saved, "no 'screenshot saved' line: %s", ReadFile(log, before).c_str());
+    std::wstring png;
+    for (auto& e : std::filesystem::directory_iterator(out, ec)) png = e.path().wstring();
+    CHECK(!png.empty(), "no PNG in %ls", out.c_str());
+    if (!png.empty()) {
+        auto name = std::filesystem::path(png).filename().wstring();
+        CHECK((name.rfind(L"Statlet ", 0) == 0 && name.size() == 8 + 19 + 4), "file name format: %ls", name.c_str());
+        auto wic = winrt::create_instance<IWICImagingFactory>(CLSID_WICImagingFactory);
+        winrt::com_ptr<IWICBitmapDecoder> decoder;
+        winrt::com_ptr<IWICBitmapFrameDecode> frame;
+        UINT w = 0, h = 0;
+        if (SUCCEEDED(wic->CreateDecoderFromFilename(png.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.put())) && SUCCEEDED(decoder->GetFrame(0, frame.put()))) frame->GetSize(&w, &h);
+        CHECK((LONG(w) == mw && LONG(h) == mh), "PNG is %ux%u, the monitor is %ldx%ld", w, h, mw, mh);
+    }
+
+    PostMessageW(island, WM_APP + 8, kCopy, 0);
+    CHECK(waitFor("screenshot copied", 4000), "no 'screenshot copied' line");
+    bool clip = false;
+    for (int i = 0; i < 10 && !clip; i++) {
+        if (OpenClipboard(nullptr)) {
+            if (HANDLE g = GetClipboardData(CF_DIB)) {
+                auto* head = static_cast<BITMAPINFOHEADER*>(GlobalLock(g));
+                clip = head && head->biWidth == mw && head->biHeight == mh;
+                GlobalUnlock(g);
+            }
+            CloseClipboard();
+        }
+        if (!clip) Sleep(50);
+    }
+    CHECK(clip, "the clipboard has no CF_DIB of %ldx%ld", mw, mh);
+    CHECK(WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT, "the island exited");
+    PostMessageW(island, WM_CLOSE, 0, 0);
+    if (WaitForSingleObject(pi.hProcess, 5000) != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    std::filesystem::remove_all(out, ec);
+}
+
+// Item 6 end to end: the Bluetooth watcher starts beside the real one without trouble, and the demo hook (a made-up connect)
+// reaches the status slot. The real connect needs headphones; this is the part a machine can check.
+TEST_CASE("a test island starts the Bluetooth watcher and peeks the icon on a connect (item 6)") {
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    auto dir = std::filesystem::path(self).parent_path();
+    std::wstring data = (dir / L"instance-bt").wstring(), log = data + L"\\island.log";
+    std::error_code ec;
+    std::filesystem::create_directories(data);
+    uintmax_t before = std::filesystem::file_size(log, ec);
+    if (ec) before = 0;
+    SetEnvironmentVariableW(L"STATLET_INSTANCE", L"testbt");
+    SetEnvironmentVariableW(L"STATLET_DATA_DIR", data.c_str());
+    SetEnvironmentVariableW(L"STATLET_DEMO", L"bt");
+    SetEnvironmentVariableW(L"STATLET_TOP_OFFSET", L"300");
+    std::wstring cmd = L"\"" + (dir / L"statlet.exe").wstring() + L"\"";
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    for (auto name : {L"STATLET_INSTANCE", L"STATLET_DATA_DIR", L"STATLET_DEMO", L"STATLET_TOP_OFFSET"}) SetEnvironmentVariableW(name, nullptr);
+    REQUIRE_MESSAGE(started, "could not start statlet.exe beside the tests");
+    auto waitFor = [&](const char* line, int ms) {
+        for (int i = 0; i < ms / 50; i++) {
+            if (ReadFile(log, before).find(line) != std::string::npos) return true;
+            Sleep(50);
+        }
+        return false;
+    };
+    CHECK(waitFor("bluetooth watching", 6000), "the Bluetooth watcher did not start");
+    CHECK(waitFor("bluetooth connected", 8000), "the demo connect did not reach the island");
+    Sleep(400);
+    CHECK(WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT, "the island exited");
+    PostMessageW(IslandOf(pi.dwProcessId), WM_CLOSE, 0, 0);
+    if (WaitForSingleObject(pi.hProcess, 5000) != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+}
+
+// Item 7 end to end: a test island watches a temp folder (STATLET_DOWNLOADS_DIR); a growing x.zip.crdownload turns the icon
+// on, renaming it to x.zip shows done, then idle. The log lines are the island's own "downloads ..." records.
+TEST_CASE("a test island sees a download in its Downloads folder (item 7)") {
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    auto dir = std::filesystem::path(self).parent_path();
+    std::wstring data = (dir / L"instance-dl").wstring(), dl = (dir / L"instance-dl-downloads").wstring(), log = data + L"\\island.log";
+    std::error_code ec;
+    std::filesystem::remove_all(dl, ec);
+    std::filesystem::create_directories(data);
+    std::filesystem::create_directories(dl);
+    uintmax_t before = std::filesystem::file_size(log, ec);
+    if (ec) before = 0;
+    SetEnvironmentVariableW(L"STATLET_INSTANCE", L"testdl");
+    SetEnvironmentVariableW(L"STATLET_DATA_DIR", data.c_str());
+    SetEnvironmentVariableW(L"STATLET_DOWNLOADS_DIR", dl.c_str());
+    SetEnvironmentVariableW(L"STATLET_TOP_OFFSET", L"300");
+    std::wstring cmd = L"\"" + (dir / L"statlet.exe").wstring() + L"\"";
+    STARTUPINFOW si{sizeof si};
+    PROCESS_INFORMATION pi{};
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi);
+    for (auto name : {L"STATLET_INSTANCE", L"STATLET_DATA_DIR", L"STATLET_DOWNLOADS_DIR", L"STATLET_TOP_OFFSET"}) SetEnvironmentVariableW(name, nullptr);
+    REQUIRE_MESSAGE(started, "could not start statlet.exe beside the tests");
+    auto waitFor = [&](const char* line, int ms) {
+        for (int i = 0; i < ms / 50; i++) {
+            if (ReadFile(log, before).find(line) != std::string::npos) return true;
+            Sleep(50);
+        }
+        return false;
+    };
+    auto write = [&](const wchar_t* name, size_t bytes) {
+        if (FILE* f = _wfopen((dl + L"\\" + name).c_str(), L"ab")) {
+            std::string chunk(bytes, 'x');
+            fwrite(chunk.data(), 1, chunk.size(), f);
+            fclose(f);
+        }
+    };
+    bool watching = waitFor("downloads watching", 6000);
+    CHECK(watching, "the island never started watching '%ls'", dl.c_str());
+    if (watching) {
+        write(L"x.zip.crdownload", 100);
+        CHECK(waitFor("downloads active", 3000), "a new partial file did not show the download icon");
+        Sleep(1100);
+        write(L"x.zip.crdownload", 100);  // it grows
+        Sleep(1100);
+        std::filesystem::rename(dl + L"\\x.zip.crdownload", dl + L"\\x.zip", ec);
+        CHECK(waitFor("downloads done", 3000), "renaming the partial to x.zip did not show done");
+        CHECK(waitFor("downloads idle", 5000), "done did not hand the slot back after 2 s");
+    }
+    PostMessageW(IslandOf(pi.dwProcessId), WM_CLOSE, 0, 0);
+    if (WaitForSingleObject(pi.hProcess, 5000) != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 0);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    std::filesystem::remove_all(dl, ec);
 }
 
 TEST_SUITE_END();
