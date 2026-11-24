@@ -2,7 +2,9 @@
   <img src="docs/img/logo.png" alt="Statlet logo" width="96">
 </p>
 
-<h1 align="center">Statlet <sub>(working name)</sub></h1>
+<h1 align="center">Statlet</h1>
+
+<p align="center">A Dynamic Island for Windows 11.</p>
 
 <p align="center">
   <img alt="Windows 11" src="https://img.shields.io/badge/Windows-11%20x64-0078D4">
@@ -11,108 +13,97 @@
 </p>
 
 <p align="center">
-  <img src="docs/img/hero.gif" alt="The island resting, opening on hover to show CPU and RAM, then tucking away" width="386">
+  <img src="docs/img/hero.svg" alt="A song peeks into the island, tucks beside the clock, then opens into the music card on hover" width="660">
 </p>
 
-A small floating "island" at the top-center of your Windows 11 screen, in the style of the iPhone's Dynamic Island.
-It sits quietly as a thin status pill, then opens for the things you care about: volume, battery, network, a Focus
-timer and the music that's playing. It is built to cost almost nothing while idle: it wakes only when something changes.
+The top of your screen is mostly wasted. Statlet puts a small dark pill there that shows the day, the time and how hard
+your PC is working. That's all it does, until something actually happens. Then it opens, shows you, and gets out of the way.
 
-**Status: v2.0.0.** Statlet is a working name and may change.
+You don't manage it. You don't close it. It just keeps you in the loop.
 
-## What it does
+**[Download the latest release](../../releases/latest)** · free, open source, Windows 11
 
-**Always visible: the rest line.** Weekday, date and time (the pill is sized to the day, so it never twitches), plus two mini bars for CPU (top) and RAM (bottom). A small status slot shows a download in progress, a Bluetooth device connecting or a screenshot taken. Choose the order in Settings > General. Bars turn amber at
-80% and red at 95%. The pill resizes to fit what it shows.
+## Your music, without the alt-tab
 
-**Hover to open.** Hovering opens a larger view with labeled CPU and RAM rows. If CPU or RAM stays above 90% for 30
-seconds, the island opens by itself so you notice.
+Play something. Spotify, Apple Music, a YouTube tab, pretty much anything that shows up in the Windows media flyout. The
+song peeks in with its cover and title, then settles beside the clock with a little equalizer so you know it's there.
 
-**Takeovers.** Short cards that open and then tuck away on their own:
-- volume changes (with the output device),
-- battery low, critical, charging, unplugged,
-- connection lost and back,
-- Focus timer (25 min by default; start and stop it from the tray menu).
+Hover over it and you get the whole card: a wavy progress bar that moves with the music, time left, and play, pause and
+skip. The bar can even take on the colour of the album art. It's a small thing, but once you have it you'll miss it everywhere else.
 
-**Now playing.** Reads Windows' media sessions, so it works with Spotify, Apple Music, browsers and any player in the
-Windows media flyout. A new track peeks with album art, title and artist. Hover for the media card: progress bar,
-elapsed and remaining time, previous / play-pause / next. Pick one of five progress bar styles (Wavy, Solid, Segmented,
-Hairline, Gradient), an optional playhead dot, and let the bar take the album art's colour.
+## It speaks up only when it matters
 
-**Screenshots and sounds.** Tray icon > Copy screenshot or Save screenshot captures the monitor your cursor is on, without the pill. Optional Windows sounds for a screenshot, a finished download and a finished Focus timer.
+<p align="center">
+  <img src="docs/img/cards.svg" alt="Takeover cards for volume, low battery and a Focus timer" width="660">
+</p>
 
-**Settings app.** Tray icon > Settings. Choose how the island looks (glass tint and strength, accent color, shape and
-text), how far it sits from the top, the Focus length, the CPU/RAM warning levels, what the rest line shows while music
-plays, and whether Statlet starts with Windows. A live preview shows changes as you make them.
+Turn the volume up and the island shows you exactly where it landed, and on which speakers. Battery getting low, the internet
+dropping out, a Focus timer starting. Each one gets a card for a few seconds, and then it folds back into the pill by itself.
 
-**Behaves with your setup.** Follows display scaling and monitor changes, stays out of the way of full-screen apps,
-and pauses its polling while the screen is off or the PC is locked or asleep.
+If your CPU or RAM stays pinned for half a minute, it opens on its own too. Usually that's the first sign something's wrong.
 
-## Screenshots
+## The small stuff, kept small
 
-The rest line, always visible: date, time, and CPU / RAM mini bars.
+<p align="center">
+  <img src="docs/img/activities.svg" alt="The rest line showing a download, a finished download, a Bluetooth connection and a screenshot" width="660">
+</p>
 
-![The island's rest line](docs/img/rest-line.png)
+Some things don't need a whole card. A download in progress gets a tiny arrow that breathes until it's done, then a
+check. A Bluetooth device connecting, a screenshot you just took: one icon, a couple of seconds, gone.
 
-Hover to open it: labeled CPU and RAM rows, with a notch at the 80% warning level.
+## Light, and it stays on your PC
 
-![The island opened on hover](docs/img/hover.png)
+Statlet is native C++ talking straight to Windows. It isn't a website wrapped in an app. It wakes up when something
+changes and otherwise sits still, and it stops checking anything at all while your screen is off or locked.
 
-Hover while music plays for the media card: art (blurred here), title, artist, progress, controls and CPU / RAM.
+It also never goes online. No account, no tracking, no update checks. Your settings and a small log live in one folder
+on your PC, and that's the whole footprint. **Nothing is sent anywhere.**
 
-![The media card](docs/img/media-card.png)
+## Make it yours
 
-Takeovers, like this battery card, open on their own and tuck away:
+<p align="center">
+  <img src="docs/img/settings.png" alt="Statlet Settings, General page" width="660">
+</p>
 
-![A battery takeover card](docs/img/takeover.png)
+The settings app (tray icon > Settings) lets you shape the look: glass, shape, text, bar style, how far down it sits,
+what shows while music plays. A live preview updates as you go, so there's no guessing.
 
-When CPU or RAM runs high, the bars turn red and the island opens on its own:
-
-![The island showing CPU 97% and RAM 100% with warning marks](docs/img/high-usage.png)
-
-The settings app (tray icon > Settings), where changes apply to the island right away:
-
-![Statlet Settings, General page](docs/img/settings.png)
-
-## Install, run, quit
+## Install
 
 1. Download `Statlet-Setup-<version>.exe` from [Releases](../../releases).
-2. Optional check: its SHA256 is listed with the release. In PowerShell, `Get-FileHash .\Statlet-Setup-<version>.exe`
-   should print the same value.
-3. Run it. Windows will say "Windows protected your PC" because the setup is unsigned: **More info > Run anyway**.
-   It installs just for you (no administrator needed) into `%LOCALAPPDATA%\Programs\Statlet`.
-4. Start Statlet from the Start menu. Quit: tray icon > **Quit Statlet**.
+2. Run it. Windows will say "Windows protected your PC" because the setup isn't signed yet: **More info > Run anyway**.
+   It installs just for you, with no admin prompt.
+3. Open Statlet from the Start menu. To quit: tray icon > **Quit Statlet**.
 
-Nothing else to install: no .NET, Visual C++ or Windows App SDK runtime is needed. Run a newer setup over the old one to update;
-your settings are kept.
+That's it. No .NET, Visual C++ or Windows App SDK to install first. To update, run a newer setup over the old one and your
+settings stay. Want it to start with Windows? Tick the box in the installer or in Settings > General.
 
-**Start with Windows** is off by default. Tick it on the installer page, or in Settings > General. The first time you close
-Settings with it off, Statlet asks once whether to turn it on.
+<details>
+<summary>Check the download, uninstall, and where files go</summary>
 
-**Uninstall:** Settings > Apps > Installed apps > Statlet > Uninstall. This also deletes `%LOCALAPPDATA%\Statlet` (your
-settings and the log).
+- **Check the file:** each release lists the setup's SHA256. In PowerShell, `Get-FileHash .\Statlet-Setup-<version>.exe`
+  should print the same value.
+- **Where it lives:** the app goes in `%LOCALAPPDATA%\Programs\Statlet`. Settings and the log (`island.log`, app events only)
+  go in `%LOCALAPPDATA%\Statlet`. Start with Windows adds one value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+  and turning it off removes it.
+- **Uninstall:** Settings > Apps > Installed apps > Statlet > Uninstall. This also deletes `%LOCALAPPDATA%\Statlet`.
+- **Updates:** since Statlet never goes online, it can't tell you about new versions. On GitHub, choose
+  **Watch > Custom > Releases** to hear about them. Settings > About has a button that opens the releases page.
 
-## Updates
+</details>
 
-Statlet never connects to the internet, so it cannot tell you about a new version. To hear about releases, open the
-repository on GitHub and choose **Watch > Custom > Releases**, or follow the releases feed. Settings > About has a
-**Releases page** button that opens this page in your browser.
-
-## Requirements and known limits
+## Good to know
 
 - Windows 11, 64-bit (Intel/AMD). Not tested on Windows 10 or ARM.
-- Unsigned, so SmartScreen warns. No auto-update (see Updates).
-- Autostart is opt-in (Settings > General > Start with Windows). It adds one value under
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; turning it off removes it.
-- Screenshots work from the tray menu only (not Snipping Tool or Print Screen yet). Downloads are seen in the root of your Downloads folder only.
-- Tested on one laptop with one external monitor, so other multi-monitor setups may misbehave.
-- Statlet only writes to `%LOCALAPPDATA%\Statlet`: your settings and a small event log (`island.log`, app events only).
-  Nothing is sent anywhere.
+- The installer is unsigned for now, so SmartScreen warns once.
+- Screenshots come from the tray menu only. Snipping Tool and Print Screen aren't picked up yet.
+- Downloads are seen in the root of your Downloads folder only.
+- Built and tested on one laptop with one external monitor, so other multi-monitor setups might act up. If yours does, tell me.
 
 ## Feedback
 
-Open an issue on the [Issues](../../issues) page: what you saw, what you did, your Windows version and monitor setup.
-Attach `%LOCALAPPDATA%\Statlet\island.log` if the island vanished or behaved oddly.
+Something looks off, or the island vanished? Open an [issue](../../issues) with what you saw, your Windows version and your
+monitor setup. Attaching `%LOCALAPPDATA%\Statlet\island.log` helps a lot.
 
 ## Build from source
 
@@ -123,7 +114,8 @@ Needs Visual Studio with the C++ x64 tools, the .NET 10 SDK and, for the install
 .\package.ps1      build the installer and its SHA256 into dist\
 ```
 
-See `island/README.md` for how the island works and `docs/adr/` for design decisions.
+See `island/README.md` for how the island works and `docs/adr/` for design decisions. The animations in this README are
+drawn by `tools/readme-art/make_readme_art.py` from the app's own sizes and colours.
 
 ## License
 
